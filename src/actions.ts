@@ -7,7 +7,7 @@ import type {
   State,
   UUID,
 } from "@elizaos/core";
-import { logger } from "@elizaos/core";
+import { logger, createUniqueUuid } from "@elizaos/core";
 import * as fs from "fs";
 import * as path from "path";
 import { KnowledgeService } from "./service.ts";
@@ -160,8 +160,7 @@ export const processKnowledgeAction: Action = {
 
         // Prepare knowledge options
         const knowledgeOptions: AddKnowledgeOptions = {
-          clientDocumentId:
-            `${runtime.agentId}-${Date.now()}-${fileName}` as UUID,
+          clientDocumentId: createUniqueUuid(runtime.agentId + fileName + Date.now(), fileName),
           contentType,
           originalFilename: fileName,
           worldId: runtime.agentId,
@@ -198,7 +197,7 @@ export const processKnowledgeAction: Action = {
 
         // Prepare knowledge options for text
         const knowledgeOptions: AddKnowledgeOptions = {
-          clientDocumentId: `${runtime.agentId}-${Date.now()}-text` as UUID,
+          clientDocumentId: createUniqueUuid(runtime.agentId + "text" + Date.now(), "user-knowledge"),
           contentType: "text/plain",
           originalFilename: "user-knowledge.txt",
           worldId: runtime.agentId,

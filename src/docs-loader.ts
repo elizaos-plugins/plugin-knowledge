@@ -1,4 +1,4 @@
-import { logger, UUID } from "@elizaos/core";
+import { logger, UUID, createUniqueUuid } from "@elizaos/core";
 import * as fs from "fs";
 import * as path from "path";
 import { KnowledgeService } from "./service.ts";
@@ -106,7 +106,7 @@ export async function loadDocsFromPath(
 
       // Create knowledge options
       const knowledgeOptions: AddKnowledgeOptions = {
-        clientDocumentId: `${agentId}-docs-${Date.now()}-${fileName}` as UUID,
+        clientDocumentId: createUniqueUuid(agentId + fileName + Date.now(), fileName),
         contentType,
         originalFilename: fileName,
         worldId: worldId || agentId,
