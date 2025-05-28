@@ -348,3 +348,33 @@ export function isBinaryContentType(contentType: string, filename: string): bool
 function isTextItem(item: TextItem | TextMarkedContent): item is TextItem {
   return 'str' in item;
 }
+
+/**
+ * Fetches content from a URL and returns it as base64 encoded string
+ * @param url URL to fetch content from
+ * @returns Object containing base64 encoded content and content type
+ */
+export async function fetchUrlContent(url: string): Promise<{ content: string; contentType: string }> {
+  try {
+    const response = await fetch(url, {
+      headers: {
+        'User-Agent': 'Knowledge-Plugin/1.0',
+      }
+    });
+    
+    if (!response.ok) {
+      throw new Error(`Failed to fetch URL: ${response.status} ${response.statusText}`);
+    }
+    
+    const contentType = response.headers.get('content-type') || 'application/octet-stream';
+    const arrayBuffer = await response.arrayBuffer();
+    const buffer = Buffer.from(arrayBuffer);
+    const base64Content = buffer.toString('base64');
+    
+    logger.debug(`[TextUtil] Successfully fetched URL: ${url} (${contentType}), size: ${buffer.length} bytes`);
+    return { content: base64Content, contentType };
+  } catch (error: any) {
+    logger.error(`[TextUtil] Error fetching URL ${url}: ${error.message}`);
+    throw new Error(`Failed to fetch content from URL: ${error.message}`);
+  }
+}

@@ -104,7 +104,7 @@ const apiClient = {
         return result; // Assuming API returns { success: true, data: { memories: [] } } or similar
     },
     deleteKnowledgeDocument: async (agentId: UUID, knowledgeId: UUID) => {
-        const response = await fetch(`/api/agents/${agentId}/plugins/knowledge/documents/${knowledgeId}`, {
+        const response = await fetch(`/api/agents/${agentId}/plugins/knowledge/knowledges/${knowledgeId}`, {
             method: 'DELETE',
         });
         if (!response.ok) {
@@ -119,7 +119,7 @@ const apiClient = {
         const formData = new FormData();
         files.forEach(file => formData.append('files', file));
 
-        const response = await fetch(`/api/agents/${agentId}/plugins/knowledge/upload`, {
+        const response = await fetch(`/api/agents/${agentId}/plugins/knowledge/knowledges`, {
             method: 'POST',
             body: formData,
             // Note: Content-Type is set automatically by browser for FormData
@@ -129,6 +129,20 @@ const apiClient = {
             throw new Error(`Failed to upload knowledge: ${response.status} ${errorText}`);
         }
         return await response.json(); // Assuming API returns an object { success: true, data: [...] }
+    },
+    addKnowledgeFromUrl: async (agentId: string, urls: string[]) => {
+        const response = await fetch(`/api/agents/${agentId}/plugins/knowledge/knowledges`, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({ fileUrls: urls })
+        });
+        if (!response.ok) {
+            const errorText = await response.text();
+            throw new Error(`Failed to add knowledge from URL: ${response.status} ${errorText}`);
+        }
+        return await response.json();
     }
 };
 
@@ -250,8 +264,25 @@ export function KnowledgeTab({ agentId }: { agentId: UUID }) {
 
     const handleDelete = (knowledgeId: string) => {
         if (knowledgeId && window.confirm('Are you sure you want to delete this document?')) {
-            deleteKnowledgeDoc({ knowledgeId: knowledgeId as UUID });
-            setViewingContent(null);
+            deleteKnowledgeDoc(
+                { knowledgeId: knowledgeId as UUID },
+                {
+                    onError: (error) => {
+                        toast({
+                            title: 'Deletion Failed',
+                            description: error instanceof Error ? error.message : 'Failed to delete knowledge document',
+                            variant: 'destructive',
+                        });
+                    },
+                    onSuccess: () => {
+                        toast({
+                            title: 'Document Deleted',
+                            description: 'Knowledge document successfully deleted',
+                        });
+                        setViewingContent(null);
+                    }
+                }
+            );
         }
     };
 
