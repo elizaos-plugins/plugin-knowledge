@@ -478,23 +478,23 @@ export const knowledgeRoutes: Route[] = [
   },
   {
     type: 'POST',
-    path: '/knowledges',
+    path: '/',
     handler: uploadKnowledgeHandler,
     isMultipart: true,
   },
   {
     type: 'GET',
-    path: '/knowledges',
+    path: '/',
     handler: getKnowledgeDocumentsHandler,
   },
   {
     type: 'GET',
-    path: '/knowledges/:knowledgeId',
+    path: '/:knowledgeId',
     handler: getKnowledgeByIdHandler,
   },
   {
     type: 'DELETE',
-    path: '/knowledges/:knowledgeId',
+    path: '/:knowledgeId',
     handler: deleteKnowledgeDocumentHandler,
   },
 ];

@@ -95,7 +95,7 @@ const apiClient = {
         if (options?.before) params.append('before', options.before.toString());
         if (options?.includeEmbedding) params.append('includeEmbedding', 'true');
 
-        const response = await fetch(`/api/agents/${agentId}/plugins/knowledge/documents?${params.toString()}`);
+        const response = await fetch(`/api/agents/${agentId}/plugins/knowledge/?${params.toString()}`);
         if (!response.ok) {
             const errorText = await response.text();
             throw new Error(`Failed to fetch knowledge documents: ${response.status} ${errorText}`);
@@ -104,7 +104,7 @@ const apiClient = {
         return result; // Assuming API returns { success: true, data: { memories: [] } } or similar
     },
     deleteKnowledgeDocument: async (agentId: UUID, knowledgeId: UUID) => {
-        const response = await fetch(`/api/agents/${agentId}/plugins/knowledge/knowledges/${knowledgeId}`, {
+        const response = await fetch(`/api/agents/${agentId}/plugins/knowledge/${knowledgeId}`, {
             method: 'DELETE',
         });
         if (!response.ok) {
@@ -119,7 +119,7 @@ const apiClient = {
         const formData = new FormData();
         files.forEach(file => formData.append('files', file));
 
-        const response = await fetch(`/api/agents/${agentId}/plugins/knowledge/knowledges`, {
+        const response = await fetch(`/api/agents/${agentId}/plugins/knowledge/`, {
             method: 'POST',
             body: formData,
             // Note: Content-Type is set automatically by browser for FormData
@@ -131,7 +131,7 @@ const apiClient = {
         return await response.json(); // Assuming API returns an object { success: true, data: [...] }
     },
     addKnowledgeFromUrl: async (agentId: string, urls: string[]) => {
-        const response = await fetch(`/api/agents/${agentId}/plugins/knowledge/knowledges`, {
+        const response = await fetch(`/api/agents/${agentId}/plugins/knowledge/`, {
             method: 'POST',
             headers: {
                 'Content-Type': 'application/json'
