@@ -3,7 +3,7 @@ import { MemoryType, createUniqueUuid, logger } from '@elizaos/core';
 import { KnowledgeService } from './service';
 import fs from 'node:fs'; // For file operations in upload
 import path from 'node:path'; // For path operations
-import { fetchUrlContent } from './utils'; // Import fetchUrlContent for URL processing
+import { fetchUrlContent, normalizeS3Url } from './utils'; // Import utils functions
 
 // Add this type declaration to fix Express.Multer.File error
 interface MulterFile {
@@ -161,8 +161,11 @@ async function uploadKnowledgeHandler(req: any, res: any, runtime: IAgentRuntime
       // Process each URL as a distinct file
       const processingPromises = fileUrls.map(async (fileUrl: string) => {
         try {
-          // Create a unique ID based on the URL
-          const knowledgeId = createUniqueUuid(runtime, fileUrl) as UUID;
+          // Normalize the URL for storage (remove query parameters)
+          const normalizedUrl = normalizeS3Url(fileUrl);
+          
+          // Create a unique ID based on the normalized URL
+          const knowledgeId = createUniqueUuid(runtime, normalizedUrl) as UUID;
           
           // Extract filename from URL for better display
           const urlObject = new URL(fileUrl);
@@ -210,9 +213,9 @@ async function uploadKnowledgeHandler(req: any, res: any, runtime: IAgentRuntime
             worldId: runtime.agentId,
             roomId: runtime.agentId,
             entityId: runtime.agentId,
-            // Store the source URL in metadata
+            // Store the normalized URL in metadata
             metadata: {
-              url: fileUrl
+              url: normalizedUrl
             }
           };
 
@@ -282,15 +285,18 @@ async function getKnowledgeDocumentsHandler(req: any, res: any, runtime: IAgentR
     // Filter documents by URL if fileUrls is provided
     let filteredMemories = memories;
     if (fileUrls && fileUrls.length > 0) {
-      // Create IDs based on URLs for comparison
-      const urlBasedIds = fileUrls.map((url: string) => createUniqueUuid(runtime, url));
+      // Normalize the URLs for comparison
+      const normalizedRequestUrls = fileUrls.map((url: string) => normalizeS3Url(url));
+      
+      // Create IDs based on normalized URLs for comparison
+      const urlBasedIds = normalizedRequestUrls.map((url: string) => createUniqueUuid(runtime, url));
       
       filteredMemories = memories.filter(memory => 
         urlBasedIds.includes(memory.id) || // If the ID corresponds directly
         // Or if the URL is stored in the metadata (check if it exists)
         (memory.metadata && 'url' in memory.metadata && 
          typeof memory.metadata.url === 'string' && 
-         fileUrls.includes(memory.metadata.url))
+         normalizedRequestUrls.includes(normalizeS3Url(memory.metadata.url)))
       );
       
       logger.debug(`[KNOWLEDGE GET HANDLER] Filtered documents by URLs: ${fileUrls.length} URLs, found ${filteredMemories.length} matching documents`);
@@ -561,6 +567,7 @@ async function getKnowledgeChunksHandler(req: any, res: any, runtime: IAgentRunt
   try {
     const limit = req.query.limit ? Number.parseInt(req.query.limit as string, 10) : 100;
     const before = req.query.before ? Number.parseInt(req.query.before as string, 10) : Date.now();
+    const documentId = req.query.documentId as string | undefined;
     
     // Get knowledge chunks/fragments for graph view
     const chunks = await service.getMemories({
@@ -569,7 +576,17 @@ async function getKnowledgeChunksHandler(req: any, res: any, runtime: IAgentRunt
       end: before,
     });
 
-    sendSuccess(res, { chunks });
+    // Filter chunks by documentId if provided
+    const filteredChunks = documentId 
+      ? chunks.filter(chunk => 
+          chunk.metadata && 
+          typeof chunk.metadata === 'object' && 
+          'documentId' in chunk.metadata && 
+          chunk.metadata.documentId === documentId
+        )
+      : chunks;
+
+    sendSuccess(res, { chunks: filteredChunks });
   } catch (error: any) {
     logger.error('[KNOWLEDGE CHUNKS GET HANDLER] Error retrieving chunks:', error);
     sendError(res, 500, 'RETRIEVAL_ERROR', 'Failed to retrieve knowledge chunks', error.message);

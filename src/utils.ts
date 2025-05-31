@@ -350,6 +350,22 @@ function isTextItem(item: TextItem | TextMarkedContent): item is TextItem {
 }
 
 /**
+ * Normalizes an S3 URL by removing query parameters (signature, etc.)
+ * This allows for consistent URL comparison regardless of presigned URL parameters
+ * @param url The S3 URL to normalize
+ * @returns The normalized URL containing only the origin and pathname
+ */
+export function normalizeS3Url(url: string): string {
+  try {
+    const urlObj = new URL(url);
+    return `${urlObj.origin}${urlObj.pathname}`;
+  } catch (error) {
+    logger.warn(`[URL NORMALIZER] Failed to parse URL: ${url}. Returning original.`);
+    return url;
+  }
+}
+
+/**
  * Fetches content from a URL and converts it to base64 format
  * @param url The URL to fetch content from
  * @returns An object containing the base64 content and content type

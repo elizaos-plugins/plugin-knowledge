@@ -219,6 +219,7 @@ export class KnowledgeService extends Service {
     content,
     roomId,
     entityId,
+    metadata,
   }: AddKnowledgeOptions): Promise<{
     clientDocumentId: string;
     storedDocumentMemoryId: UUID;
@@ -324,6 +325,7 @@ export class KnowledgeService extends Service {
         worldId,
         fileSize: fileBuffer ? fileBuffer.length : extractedText.length,
         documentId: clientDocumentId, // Explicitly set documentId in metadata as well
+        customMetadata: metadata, // Pass the custom metadata
       });
 
       const memoryWithScope = {

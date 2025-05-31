@@ -28,8 +28,8 @@ const useToast = () => ({
 const Dialog = ({ open, onOpenChange, children }: { open: boolean; onOpenChange: (open: boolean) => void; children: React.ReactNode }) => {
     if (!open) return null;
     return (
-        <div className="fixed inset-0 z-50 bg-black/80 flex items-center justify-center p-4" onClick={() => onOpenChange(false)}>
-            <div className="bg-gray-50 dark:bg-gray-800 rounded-lg shadow-xl max-w-full max-h-full flex flex-col" onClick={(e) => e.stopPropagation()}>
+        <div className="fixed inset-0 z-50 bg-background/80 backdrop-blur-sm flex items-center justify-center p-4" onClick={() => onOpenChange(false)}>
+            <div className="bg-card text-card-foreground rounded-lg shadow-lg max-w-full max-h-full flex flex-col border border-border" onClick={(e) => e.stopPropagation()}>
                 {children}
             </div>
         </div>
@@ -37,7 +37,7 @@ const Dialog = ({ open, onOpenChange, children }: { open: boolean; onOpenChange:
 };
 
 const DialogContent = ({ className, children }: { className?: string; children: React.ReactNode }) => (
-    <div className={cn("p-6 flex flex-col border-gray-200 dark:border-gray-700", className)}>{children}</div>
+    <div className={cn("p-6 flex flex-col border-border", className)}>{children}</div>
 );
 
 const DialogHeader = ({ className, children }: { className?: string; children: React.ReactNode }) => (
@@ -49,7 +49,7 @@ const DialogTitle = ({ className, children }: { className?: string; children: Re
 );
 
 const DialogDescription = ({ className, children }: { className?: string; children: React.ReactNode }) => (
-    <p className={cn("text-sm text-gray-600", className)}>{children}</p>
+    <p className={cn("text-sm text-muted-foreground", className)}>{children}</p>
 );
 
 const DialogFooter = ({ className, children }: { className?: string; children: React.ReactNode }) => (
@@ -79,6 +79,8 @@ interface MemoryMetadata {
     timestamp?: number;
     contentType?: string;
     documentId?: string;
+    position?: number;
+    source?: string;
 }
 
 interface UploadResultItem {
@@ -102,10 +104,11 @@ const apiClient = {
         return await response.json();
     },
 
-    getKnowledgeChunks: async (agentId: UUID, options?: { limit?: number; before?: number }) => {
+    getKnowledgeChunks: async (agentId: UUID, options?: { limit?: number; before?: number; documentId?: UUID }) => {
         const params = new URLSearchParams();
         if (options?.limit) params.append('limit', options.limit.toString());
         if (options?.before) params.append('before', options.before.toString());
+        if (options?.documentId) params.append('documentId', options.documentId);
 
         const response = await fetch(`/api/agents/${agentId}/plugins/knowledge/knowledges?${params.toString()}`);
         if (!response.ok) {
@@ -148,21 +151,53 @@ const useKnowledgeDocuments = (agentId: UUID, enabled: boolean = true, includeEm
         queryKey: ['agents', agentId, 'knowledge', 'documents', { includeEmbedding }],
         queryFn: async () => {
             const response = await apiClient.getKnowledgeDocuments(agentId, { includeEmbedding });
-            return response.data.memories;
+            return response.data.memories || [];
         },
         enabled,
     });
 };
 
-const useKnowledgeChunks = (agentId: UUID, enabled: boolean = true) => {
-    return useQuery<Memory[], Error>({
-        queryKey: ['agents', agentId, 'knowledge', 'chunks'],
+const useKnowledgeChunks = (agentId: UUID, enabled: boolean = true, documentIdFilter?: UUID) => {
+    // Query to get fragments (chunks)
+    const {
+        data: chunks = [],
+        isLoading: chunksLoading,
+        error: chunksError,
+    } = useQuery<Memory[], Error>({
+        queryKey: ['agents', agentId, 'knowledge', 'chunks', { documentIdFilter }],
         queryFn: async () => {
-            const response = await apiClient.getKnowledgeChunks(agentId);
-            return response.data.chunks;
+            const response = await apiClient.getKnowledgeChunks(agentId, { documentId: documentIdFilter });
+            return response.data.chunks || [];
         },
         enabled,
     });
+    
+    // Query to get documents
+    const {
+        data: documents = [],
+        isLoading: documentsLoading,
+        error: documentsError,
+    } = useQuery<Memory[], Error>({
+        queryKey: ['agents', agentId, 'knowledge', 'documents-for-graph'],
+        queryFn: async () => {
+            const response = await apiClient.getKnowledgeDocuments(agentId, { includeEmbedding: false });
+            return response.data.memories || [];
+        },
+        enabled,
+    });
+    
+    // Combine documents and fragments
+    const allMemories = [...documents, ...chunks];
+    const isLoading = chunksLoading || documentsLoading;
+    const error = chunksError || documentsError;
+    
+    console.log(`Documents: ${documents.length}, Fragments: ${chunks.length}, Total: ${allMemories.length}`);
+    
+    return {
+        data: allMemories,
+        isLoading,
+        error,
+    };
 };
 
 // Hook for deleting knowledge documents
@@ -191,6 +226,7 @@ export function KnowledgeTab({ agentId }: { agentId: UUID }) {
     const [loadingMore, setLoadingMore] = useState(false);
     const [viewMode, setViewMode] = useState<'list' | 'graph'>('list');
     const [selectedMemory, setSelectedMemory] = useState<Memory | null>(null);
+    const [documentIdFilter, setDocumentIdFilter] = useState<UUID | undefined>(undefined);
     const [pdfZoom, setPdfZoom] = useState(1.0);
     const [showUrlDialog, setShowUrlDialog] = useState(false);
     const [urlInput, setUrlInput] = useState('');
@@ -203,21 +239,24 @@ export function KnowledgeTab({ agentId }: { agentId: UUID }) {
     const { toast } = useToast();
     const queryClient = useQueryClient();
 
+    // List mode: use useKnowledgeDocuments to get only documents
     const {
-        data: documents = [],
+        data: documentsOnly = [],
         isLoading: documentsLoading,
         error: documentsError,
     } = useKnowledgeDocuments(agentId, viewMode === 'list', false);
 
+    // Graph mode: use useKnowledgeChunks to get documents and fragments
     const {
-        data: knowledgeChunks = [],
-        isLoading: chunksLoading,
-        error: chunksError,
-    } = useKnowledgeChunks(agentId, viewMode === 'graph');
+        data: graphMemories = [],
+        isLoading: graphLoading,
+        error: graphError,
+    } = useKnowledgeChunks(agentId, viewMode === 'graph', documentIdFilter);
 
-    const isLoading = viewMode === 'list' ? documentsLoading : chunksLoading;
-    const error = viewMode === 'list' ? documentsError : chunksError;
-    const memories = viewMode === 'list' ? documents : knowledgeChunks;
+    // Use the appropriate data based on the mode
+    const isLoading = viewMode === 'list' ? documentsLoading : graphLoading;
+    const error = viewMode === 'list' ? documentsError : graphError;
+    const memories = viewMode === 'list' ? documentsOnly : graphMemories;
 
     const { mutate: deleteKnowledgeDoc } = useDeleteKnowledgeDocument(agentId);
 
@@ -313,7 +352,7 @@ export function KnowledgeTab({ agentId }: { agentId: UUID }) {
             setUrlInput('');
             setUrlError(null);
         } catch (e) {
-            setUrlError('URL invalide');
+            setUrlError('Invalid URL');
         }
     };
 
@@ -509,6 +548,87 @@ export function KnowledgeTab({ agentId }: { agentId: UUID }) {
         );
     };
 
+    // Add a function to handle the filtering of chunks by document
+    const handleDocumentFilter = (docId?: UUID) => {
+        setDocumentIdFilter(docId === documentIdFilter ? undefined : docId);
+    };
+
+    // Component to display the details of a fragment or document
+    const MemoryDetails = ({ memory }: { memory: Memory }) => {
+        const metadata = memory.metadata as MemoryMetadata;
+        const isFragment = metadata?.type === 'fragment';
+        const isDocument = metadata?.type === 'document';
+        
+        return (
+            <div className="border-t border-border bg-card text-card-foreground h-full flex flex-col">
+                <div className="p-4 flex justify-between items-start flex-shrink-0">
+                    <div className="space-y-1">
+                        <h3 className="text-sm font-medium flex items-center gap-2">
+                            {isFragment ? (
+                                <span className="flex items-center">
+                                    <div className="h-3 w-3 rounded-full bg-accent mr-1.5"></div>
+                                    Fragment
+                                </span>
+                            ) : (
+                                <span className="flex items-center">
+                                    <div className="h-3 w-3 rounded-full bg-primary mr-1.5"></div>
+                                    Document
+                                </span>
+                            )}
+                            <span className="text-muted-foreground ml-2">
+                                {metadata?.title || memory.id?.substring(0, 8)}
+                            </span>
+                        </h3>
+                        
+                        <div className="grid grid-cols-2 gap-x-4 gap-y-1 text-xs text-muted-foreground">
+                            <div className="col-span-2">ID: <span className="font-mono">{memory.id}</span></div>
+                            
+                            {isFragment && metadata.documentId && (
+                                <div className="col-span-2">
+                                    Parent Document: <span className="font-mono text-primary/80">{metadata.documentId}</span>
+                                </div>
+                            )}
+                            
+                            {isFragment && metadata.position !== undefined && (
+                                <div>Position: {metadata.position}</div>
+                            )}
+                            
+                            {metadata.source && (
+                                <div>Source: {metadata.source}</div>
+                            )}
+                            
+                            <div>Created on: {formatDate(memory.createdAt || 0)}</div>
+                        </div>
+                    </div>
+                    
+                    <Button 
+                        variant="ghost" 
+                        size="sm" 
+                        onClick={() => setSelectedMemory(null)}
+                        className="text-xs h-7 px-2"
+                    >
+                        Close
+                    </Button>
+                </div>
+                
+                <div className="px-4 pb-4 flex-1 flex flex-col">
+                    <div className="bg-background rounded border border-border p-3 text-sm overflow-auto flex-1">
+                        <pre className="whitespace-pre-wrap font-mono text-xs h-full">
+                            {memory.content?.text || 'No content available'}
+                        </pre>
+                    </div>
+                    
+                    {memory.embedding && (
+                        <div className="mt-2 flex items-center text-xs text-muted-foreground flex-shrink-0">
+                            <span className="bg-accent/20 text-accent-foreground px-1.5 py-0.5 rounded text-[10px] font-medium mr-1.5">EMBEDDING</span>
+                            <span>Vector with {memory.embedding.length} dimensions</span>
+                        </div>
+                    )}
+                </div>
+            </div>
+        );
+    };
+
     return (
         <div className="flex flex-col h-full">
             <div className="flex items-center justify-between p-4 border-b">
@@ -517,6 +637,11 @@ export function KnowledgeTab({ agentId }: { agentId: UUID }) {
                     <Button variant="outline" size="sm" onClick={() => setViewMode(viewMode === 'list' ? 'graph' : 'list')}>
                         {viewMode === 'list' ? 'Graph' : 'List'}
                     </Button>
+                    {viewMode === 'graph' && documentIdFilter && (
+                        <Button variant="outline" size="sm" onClick={() => setDocumentIdFilter(undefined)}>
+                            Clear Filter
+                        </Button>
+                    )}
                     <div className="flex gap-2">
                         <Button variant="outline" onClick={handleUrlUploadClick}>
                             <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4 mr-2" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
@@ -538,8 +663,8 @@ export function KnowledgeTab({ agentId }: { agentId: UUID }) {
                 <Dialog open={showUrlDialog} onOpenChange={setShowUrlDialog}>
                     <DialogContent className="max-w-md w-full">
                         <DialogHeader>
-                            <DialogTitle className="text-xl font-bold text-gray-900 dark:text-white">Import from URL</DialogTitle>
-                            <DialogDescription className="text-gray-700 dark:text-gray-300">
+                            <DialogTitle className="text-xl font-bold">Import from URL</DialogTitle>
+                            <DialogDescription>
                                 Enter one or more URLs of PDF, text, or other files to import into the knowledge base.
                             </DialogDescription>
                         </DialogHeader>
@@ -551,7 +676,7 @@ export function KnowledgeTab({ agentId }: { agentId: UUID }) {
                                     value={urlInput}
                                     onChange={(e) => setUrlInput(e.target.value)}
                                     disabled={isUrlUploading}
-                                    className="flex-1 bg-white dark:bg-gray-700 border-gray-300 dark:border-gray-600"
+                                    className="flex-1"
                                     onKeyDown={(e) => {
                                         if (e.key === 'Enter' && urlInput.trim()) {
                                             e.preventDefault();
@@ -564,27 +689,26 @@ export function KnowledgeTab({ agentId }: { agentId: UUID }) {
                                     size="sm" 
                                     onClick={addUrlToList} 
                                     disabled={isUrlUploading || !urlInput.trim()}
-                                    className="bg-blue-50 hover:bg-blue-100 text-blue-600 border-blue-200 hover:border-blue-300 dark:bg-blue-900/30 dark:hover:bg-blue-900/50 dark:text-blue-400 dark:border-blue-800"
                                 >
                                     Add
                                 </Button>
                             </div>
                             
                             {urlError && (
-                                <div className="text-sm text-red-500 bg-red-50 dark:bg-red-900/20 p-2 rounded-md">{urlError}</div>
+                                <div className="text-sm text-destructive bg-destructive/10 p-2 rounded-md">{urlError}</div>
                             )}
                             
                             {urls.length > 0 && (
-                                <div className="border border-gray-200 dark:border-gray-700 rounded-md bg-white dark:bg-gray-800 p-3 mt-2">
-                                    <h4 className="text-sm font-medium mb-2 text-gray-700 dark:text-gray-300">URLs to import ({urls.length})</h4>
+                                <div className="border border-border rounded-md bg-card/50 p-3 mt-2">
+                                    <h4 className="text-sm font-medium mb-2">URLs to import ({urls.length})</h4>
                                     <div className="space-y-2 max-h-40 overflow-y-auto">
                                         {urls.map((url, index) => (
-                                            <div key={index} className="flex items-center justify-between text-sm bg-gray-50 dark:bg-gray-700 p-2 rounded border border-gray-200 dark:border-gray-600">
-                                                <span className="truncate flex-1 text-gray-800 dark:text-gray-200">{url}</span>
+                                            <div key={index} className="flex items-center justify-between text-sm bg-background p-2 rounded border border-border">
+                                                <span className="truncate flex-1">{url}</span>
                                                 <Button 
                                                     variant="ghost" 
                                                     size="icon" 
-                                                    className="h-6 w-6 hover:bg-red-100 hover:text-red-600 dark:hover:bg-red-900/30 dark:hover:text-red-400" 
+                                                    className="h-6 w-6 hover:bg-destructive/10 hover:text-destructive" 
                                                     onClick={() => removeUrl(url)}
                                                     disabled={isUrlUploading}
                                                 >
@@ -599,19 +723,17 @@ export function KnowledgeTab({ agentId }: { agentId: UUID }) {
                             )}
                         </div>
 
-                        <DialogFooter className="mt-6 pt-4 border-t border-gray-200 dark:border-gray-700">
+                        <DialogFooter className="mt-6 pt-4 border-t border-border">
                             <Button 
                                 variant="outline" 
                                 onClick={() => setShowUrlDialog(false)} 
                                 disabled={isUrlUploading}
-                                className="bg-gray-100 hover:bg-gray-200 text-gray-700 dark:bg-gray-700 dark:hover:bg-gray-600 dark:text-gray-300"
                             >
                                 Cancel
                             </Button>
                             <Button 
                                 onClick={handleUrlSubmit} 
                                 disabled={isUrlUploading || (urls.length === 0 && !urlInput.trim())}
-                                className="bg-blue-600 hover:bg-blue-700 text-white dark:bg-blue-700 dark:hover:bg-blue-600"
                             >
                                 {isUrlUploading ? (
                                     <>
@@ -641,12 +763,41 @@ export function KnowledgeTab({ agentId }: { agentId: UUID }) {
                 {memories.length === 0 ? (
                     <EmptyState />
                 ) : viewMode === 'graph' ? (
-                    <div className="h-full p-4">
-                        <MemoryGraph
-                            memories={memories}
-                            onNodeClick={setSelectedMemory}
-                            selectedMemoryId={selectedMemory?.id}
-                        />
+                    <div className="flex flex-col h-full">
+                        <div className={`p-4 overflow-hidden ${selectedMemory ? 'h-1/3' : 'flex-1'} transition-all duration-300`}>
+                            <MemoryGraph
+                                memories={memories}
+                                onNodeClick={(memory) => {
+                                    setSelectedMemory(memory);
+                                    // If this is a document, filter to show only its chunks
+                                    if (memory.metadata && 
+                                        typeof memory.metadata === 'object' && 
+                                        ('type' in memory.metadata) && 
+                                        ((memory.metadata.type || '').toLowerCase() === 'document') &&
+                                        !('documentId' in memory.metadata)) {
+                                        handleDocumentFilter(memory.id as UUID);
+                                    }
+                                }}
+                                selectedMemoryId={selectedMemory?.id}
+                            />
+                            {documentIdFilter && (
+                                <div className="absolute top-16 left-4 bg-card/90 backdrop-blur-sm text-card-foreground p-2 rounded-md shadow-sm border border-border">
+                                    <span className="text-xs text-muted-foreground flex items-center">
+                                        <svg xmlns="http://www.w3.org/2000/svg" className="h-3 w-3 mr-1.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                                            <polygon points="22 3 2 3 10 12.46 10 19 14 21 14 12.46 22 3"></polygon>
+                                        </svg>
+                                        Filtering by document ID: <span className="font-mono ml-1">{documentIdFilter.substring(0, 8)}...</span>
+                                    </span>
+                                </div>
+                            )}
+                        </div>
+                        
+                        {/* Display details of selected node */}
+                        {selectedMemory && (
+                            <div className="h-2/3 overflow-hidden flex-1 transition-all duration-300">
+                                <MemoryDetails memory={selectedMemory} />
+                            </div>
+                        )}
                     </div>
                 ) : (
                     <div ref={scrollContainerRef} className="h-full overflow-y-auto p-4">
@@ -728,7 +879,7 @@ export function KnowledgeTab({ agentId }: { agentId: UUID }) {
                                     const pdfDataUrl = `data:application/pdf;base64,${viewingContent.content.text}`;
 
                                     return (
-                                        <div className="w-full h-full rounded-lg overflow-auto bg-gray-100 dark:bg-gray-900">
+                                        <div className="w-full h-full rounded-lg overflow-auto bg-card border border-border">
                                             <div
                                                 className="min-w-full flex items-center justify-center p-4"
                                                 style={{
@@ -740,10 +891,11 @@ export function KnowledgeTab({ agentId }: { agentId: UUID }) {
                                             >
                                                 <iframe
                                                     src={pdfDataUrl}
-                                                    className="w-full border-0 shadow-lg"
+                                                    className="w-full border-0 shadow-md"
                                                     style={{
                                                         height: '90vh',
                                                         maxWidth: '1200px',
+                                                        backgroundColor: 'var(--background)',
                                                     }}
                                                     title="PDF Document"
                                                 />
@@ -753,8 +905,8 @@ export function KnowledgeTab({ agentId }: { agentId: UUID }) {
                                 } else {
                                     // For all other documents, display as plain text
                                     return (
-                                        <div className="h-full w-full bg-gray-50 dark:bg-gray-900 rounded-lg border p-6">
-                                            <pre className="whitespace-pre-wrap text-sm font-mono leading-relaxed text-gray-800 dark:text-gray-200 min-w-0 break-words">
+                                        <div className="h-full w-full bg-background rounded-lg border border-border p-6">
+                                            <pre className="whitespace-pre-wrap text-sm font-mono leading-relaxed text-foreground">
                                                 {viewingContent.content?.text || 'No content available'}
                                             </pre>
                                         </div>
@@ -762,7 +914,7 @@ export function KnowledgeTab({ agentId }: { agentId: UUID }) {
                                 }
                             })()}
                         </div>
-                        <DialogFooter className="flex-shrink-0 p-6 pt-4">
+                        <DialogFooter className="flex-shrink-0 p-6 pt-4 border-t border-border">
                             <Button variant="outline" onClick={() => {
                                 setViewingContent(null);
                                 setPdfZoom(1.0); // Reset zoom when closing

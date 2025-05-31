@@ -206,6 +206,7 @@ export function createDocumentMemory({
   worldId,
   fileSize,
   documentId,
+  customMetadata,
 }: {
   text: string;
   agentId: UUID;
@@ -215,6 +216,7 @@ export function createDocumentMemory({
   worldId: UUID;
   fileSize: number;
   documentId?: UUID;
+  customMetadata?: Record<string, unknown>;
 }): Memory {
   const fileExt = originalFilename.split(".").pop()?.toLowerCase() || "";
   const title = originalFilename.replace(`.${fileExt}`, "");
@@ -239,6 +241,8 @@ export function createDocumentMemory({
       fileSize,
       source: "rag-service-main-upload",
       timestamp: Date.now(),
+      // Merge custom metadata if provided
+      ...(customMetadata || {}),
     },
   };
 }
