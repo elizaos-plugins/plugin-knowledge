@@ -1,6 +1,6 @@
 import React from 'react';
 import type { UUID, Memory } from '@elizaos/core';
-import { Book, Clock, File, FileText, LoaderIcon, Trash2, Upload } from 'lucide-react';
+import { Book, Clock, File, FileText, LoaderIcon, Trash2, Upload, List, Network } from 'lucide-react';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { ExtendedMemoryMetadata } from '../../types';
@@ -149,7 +149,7 @@ const useKnowledgeChunks = (agentId: UUID, enabled: boolean = true, documentIdFi
         },
         enabled,
     });
-    
+
     // Query to get documents
     const {
         data: documents = [],
@@ -163,14 +163,14 @@ const useKnowledgeChunks = (agentId: UUID, enabled: boolean = true, documentIdFi
         },
         enabled,
     });
-    
+
     // Combine documents and fragments
     const allMemories = [...documents, ...chunks];
     const isLoading = chunksLoading || documentsLoading;
     const error = chunksError || documentsError;
-    
+
     console.log(`Documents: ${documents.length}, Fragments: ${chunks.length}, Total: ${allMemories.length}`);
-    
+
     return {
         data: allMemories,
         isLoading,
@@ -211,7 +211,7 @@ export function KnowledgeTab({ agentId }: { agentId: UUID }) {
     const [isUrlUploading, setIsUrlUploading] = useState(false);
     const [urlError, setUrlError] = useState<string | null>(null);
     const [urls, setUrls] = useState<string[]>([]);
-    
+
     const fileInputRef = useRef<HTMLInputElement>(null);
     const scrollContainerRef = useRef<HTMLDivElement>(null);
     const { toast } = useToast();
@@ -320,12 +320,12 @@ export function KnowledgeTab({ agentId }: { agentId: UUID }) {
                 setUrlError('URL must start with http:// or https://');
                 return;
             }
-            
+
             if (urls.includes(urlInput)) {
                 setUrlError('This URL is already in the list');
                 return;
             }
-            
+
             setUrls([...urls, urlInput]);
             setUrlInput('');
             setUrlError(null);
@@ -350,7 +350,7 @@ export function KnowledgeTab({ agentId }: { agentId: UUID }) {
                 // If the input is not a valid URL, just ignore it
             }
         }
-        
+
         // If no URLs to process, show error
         if (urls.length === 0) {
             setUrlError('Please add at least one valid URL');
@@ -375,7 +375,7 @@ export function KnowledgeTab({ agentId }: { agentId: UUID }) {
             }
 
             const data = await result.json();
-            
+
             if (data.success) {
                 toast({
                     title: 'URLs imported',
@@ -536,7 +536,7 @@ export function KnowledgeTab({ agentId }: { agentId: UUID }) {
         const metadata = memory.metadata as MemoryMetadata;
         const isFragment = metadata?.type === 'fragment';
         const isDocument = metadata?.type === 'document';
-        
+
         return (
             <div className="border-t border-border bg-card text-card-foreground h-full flex flex-col">
                 <div className="p-4 flex justify-between items-start flex-shrink-0">
@@ -557,45 +557,45 @@ export function KnowledgeTab({ agentId }: { agentId: UUID }) {
                                 {metadata?.title || memory.id?.substring(0, 8)}
                             </span>
                         </h3>
-                        
+
                         <div className="grid grid-cols-2 gap-x-4 gap-y-1 text-xs text-muted-foreground">
                             <div className="col-span-2">ID: <span className="font-mono">{memory.id}</span></div>
-                            
+
                             {isFragment && metadata.documentId && (
                                 <div className="col-span-2">
                                     Parent Document: <span className="font-mono text-primary/80">{metadata.documentId}</span>
                                 </div>
                             )}
-                            
+
                             {isFragment && metadata.position !== undefined && (
                                 <div>Position: {metadata.position}</div>
                             )}
-                            
+
                             {metadata.source && (
                                 <div>Source: {metadata.source}</div>
                             )}
-                            
+
                             <div>Created on: {formatDate(memory.createdAt || 0)}</div>
                         </div>
                     </div>
-                    
-                    <Button 
-                        variant="ghost" 
-                        size="sm" 
+
+                    <Button
+                        variant="ghost"
+                        size="sm"
                         onClick={() => setSelectedMemory(null)}
                         className="text-xs h-7 px-2"
                     >
                         Close
                     </Button>
                 </div>
-                
+
                 <div className="px-4 pb-4 flex-1 flex flex-col">
                     <div className="bg-background rounded border border-border p-3 text-sm overflow-auto flex-1">
                         <pre className="whitespace-pre-wrap font-mono text-xs h-full">
                             {memory.content?.text || 'No content available'}
                         </pre>
                     </div>
-                    
+
                     {memory.embedding && (
                         <div className="mt-2 flex items-center text-xs text-muted-foreground flex-shrink-0">
                             <span className="bg-accent/20 text-accent-foreground px-1.5 py-0.5 rounded text-[10px] font-medium mr-1.5">EMBEDDING</span>
@@ -609,28 +609,69 @@ export function KnowledgeTab({ agentId }: { agentId: UUID }) {
 
     return (
         <div className="flex flex-col h-full">
-            <div className="flex items-center justify-between p-4 border-b">
-                <h2 className="text-lg font-semibold">Knowledge</h2>
-                <div className="flex items-center gap-2">
-                    <Button variant="outline" size="sm" onClick={() => setViewMode(viewMode === 'list' ? 'graph' : 'list')}>
-                        {viewMode === 'list' ? 'Graph' : 'List'}
+            <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between p-4 border-b gap-3">
+                <div className="flex flex-col gap-1">
+                    <h2 className="text-lg font-semibold">Knowledge</h2>
+                    <p className="text-xs text-muted-foreground">
+                        {viewMode === 'list'
+                            ? 'Viewing documents only'
+                            : 'Viewing documents and their fragments'}
+                    </p>
+                </div>
+                <div className="flex items-center gap-2 w-full sm:w-auto">
+                    <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={() => setViewMode(viewMode === 'list' ? 'graph' : 'list')}
+                        className="flex-shrink-0"
+                        title={viewMode === 'list' ? 'Switch to Graph view to see documents and fragments' : 'Switch to List view to see documents only'}
+                    >
+                        {viewMode === 'list' ? (
+                            <>
+                                <Network className="h-4 w-4 mr-2" />
+                                <span className="hidden md:inline">Graph View</span>
+                                <span className="md:hidden">Graph</span>
+                            </>
+                        ) : (
+                            <>
+                                <List className="h-4 w-4 mr-2" />
+                                <span className="hidden md:inline">List View</span>
+                                <span className="md:hidden">List</span>
+                            </>
+                        )}
                     </Button>
                     {viewMode === 'graph' && documentIdFilter && (
-                        <Button variant="outline" size="sm" onClick={() => setDocumentIdFilter(undefined)}>
-                            Clear Filter
+                        <Button
+                            variant="outline"
+                            size="sm"
+                            onClick={() => setDocumentIdFilter(undefined)}
+                            className="flex-shrink-0"
+                        >
+                            <span className="hidden sm:inline">Clear Filter</span>
+                            <span className="sm:hidden">Clear</span>
                         </Button>
                     )}
-                    <div className="flex gap-2">
-                        <Button variant="outline" onClick={handleUrlUploadClick}>
-                            <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4 mr-2" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                    <div className="flex gap-2 ml-auto sm:ml-0">
+                        <Button
+                            variant="outline"
+                            onClick={handleUrlUploadClick}
+                            size="sm"
+                            className="flex-shrink-0"
+                        >
+                            <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4 sm:mr-2" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                                 <path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"></path>
                                 <path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"></path>
                             </svg>
-                            URL
+                            <span className="hidden sm:inline">URL</span>
                         </Button>
-                        <Button onClick={handleUploadClick} disabled={isUploading}>
-                            {isUploading ? <LoaderIcon className="h-4 w-4 animate-spin mr-2" /> : <Upload className="h-4 w-4 mr-2" />}
-                            Upload
+                        <Button
+                            onClick={handleUploadClick}
+                            disabled={isUploading}
+                            size="sm"
+                            className="flex-shrink-0"
+                        >
+                            {isUploading ? <LoaderIcon className="h-4 w-4 animate-spin sm:mr-2" /> : <Upload className="h-4 w-4 sm:mr-2" />}
+                            <span className="hidden sm:inline">Upload</span>
                         </Button>
                     </div>
                 </div>
@@ -655,27 +696,27 @@ export function KnowledgeTab({ agentId }: { agentId: UUID }) {
                                     onChange={(e) => setUrlInput(e.target.value)}
                                     disabled={isUrlUploading}
                                     className="flex-1"
-                                    onKeyDown={(e) => {
+                                    onKeyDown={(e: React.KeyboardEvent<HTMLInputElement>) => {
                                         if (e.key === 'Enter' && urlInput.trim()) {
                                             e.preventDefault();
                                             addUrlToList();
                                         }
                                     }}
                                 />
-                                <Button 
-                                    variant="outline" 
-                                    size="sm" 
-                                    onClick={addUrlToList} 
+                                <Button
+                                    variant="outline"
+                                    size="sm"
+                                    onClick={addUrlToList}
                                     disabled={isUrlUploading || !urlInput.trim()}
                                 >
                                     Add
                                 </Button>
                             </div>
-                            
+
                             {urlError && (
                                 <div className="text-sm text-destructive bg-destructive/10 p-2 rounded-md">{urlError}</div>
                             )}
-                            
+
                             {urls.length > 0 && (
                                 <div className="border border-border rounded-md bg-card/50 p-3 mt-2">
                                     <h4 className="text-sm font-medium mb-2">URLs to import ({urls.length})</h4>
@@ -683,10 +724,10 @@ export function KnowledgeTab({ agentId }: { agentId: UUID }) {
                                         {urls.map((url, index) => (
                                             <div key={index} className="flex items-center justify-between text-sm bg-background p-2 rounded border border-border">
                                                 <span className="truncate flex-1">{url}</span>
-                                                <Button 
-                                                    variant="ghost" 
-                                                    size="icon" 
-                                                    className="h-6 w-6 hover:bg-destructive/10 hover:text-destructive" 
+                                                <Button
+                                                    variant="ghost"
+                                                    size="icon"
+                                                    className="h-6 w-6 hover:bg-destructive/10 hover:text-destructive"
                                                     onClick={() => removeUrl(url)}
                                                     disabled={isUrlUploading}
                                                 >
@@ -702,15 +743,15 @@ export function KnowledgeTab({ agentId }: { agentId: UUID }) {
                         </div>
 
                         <DialogFooter className="mt-6 pt-4 border-t border-border">
-                            <Button 
-                                variant="outline" 
-                                onClick={() => setShowUrlDialog(false)} 
+                            <Button
+                                variant="outline"
+                                onClick={() => setShowUrlDialog(false)}
                                 disabled={isUrlUploading}
                             >
                                 Cancel
                             </Button>
-                            <Button 
-                                onClick={handleUrlSubmit} 
+                            <Button
+                                onClick={handleUrlSubmit}
                                 disabled={isUrlUploading || (urls.length === 0 && !urlInput.trim())}
                             >
                                 {isUrlUploading ? (
@@ -748,9 +789,9 @@ export function KnowledgeTab({ agentId }: { agentId: UUID }) {
                                 onNodeClick={(memory) => {
                                     setSelectedMemory(memory);
                                     // If this is a document, filter to show only its chunks
-                                    if (memory.metadata && 
-                                        typeof memory.metadata === 'object' && 
-                                        ('type' in memory.metadata) && 
+                                    if (memory.metadata &&
+                                        typeof memory.metadata === 'object' &&
+                                        ('type' in memory.metadata) &&
                                         ((memory.metadata.type || '').toLowerCase() === 'document') &&
                                         !('documentId' in memory.metadata)) {
                                         handleDocumentFilter(memory.id as UUID);
@@ -769,7 +810,7 @@ export function KnowledgeTab({ agentId }: { agentId: UUID }) {
                                 </div>
                             )}
                         </div>
-                        
+
                         {/* Display details of selected node */}
                         {selectedMemory && (
                             <div className="h-2/3 overflow-hidden flex-1 transition-all duration-300">
