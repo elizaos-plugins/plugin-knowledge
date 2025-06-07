@@ -70,6 +70,7 @@ export interface AgentPanel {
   component: React.ComponentType<any>;
   icon?: string;
   public?: boolean;
+  shortLabel?: string; // Optional short label for mobile
 }
 
 interface KnowledgePanelProps {
@@ -91,6 +92,7 @@ export const panels: AgentPanel[] = [
     component: KnowledgePanelComponent,
     icon: 'Book',
     public: false,
+    shortLabel: 'Know',
   },
 ];
 
