@@ -27,6 +27,11 @@ function KnowledgeRoute() {
   const config = window.ELIZA_CONFIG;
   const agentId = config?.agentId;
 
+  // Apply dark mode to the root element
+  React.useEffect(() => {
+    document.documentElement.classList.add('dark');
+  }, []);
+
   if (!agentId) {
     return (
       <div className="p-4 text-center">

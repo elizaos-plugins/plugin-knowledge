@@ -1,6 +1,5 @@
-@tailwind base;
-@tailwind components;
-@tailwind utilities;
+@config "../../tailwind.config.js";
+@import 'tailwindcss';
 
 @layer base {
   :root {
@@ -68,7 +67,11 @@
   }
 }
 
-* {
-  @apply dark;
-  @apply font-mono;
+/* Force dark mode */
+:root {
+  color-scheme: dark;
+}
+
+body {
+  @apply font-mono bg-background text-foreground;
 }
