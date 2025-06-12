@@ -23,7 +23,7 @@ import {
 import { AddKnowledgeOptions } from './types.ts';
 import type { KnowledgeConfig, LoadResult } from './types';
 import { loadDocsFromPath } from './docs-loader';
-import { isBinaryContentType } from './utils.ts';
+import { isBinaryContentType, looksLikeBase64 } from './utils.ts';
 
 /**
  * Knowledge Service - Provides retrieval augmented generation capabilities
@@ -274,11 +274,7 @@ export class KnowledgeService extends Service {
         // Routes always send base64, but docs-loader sends plain text
 
         // First, check if this looks like base64
-        const base64Regex = /^[A-Za-z0-9+/]+=*$/;
-        const looksLikeBase64 =
-          content && content.length > 0 && base64Regex.test(content.replace(/\s/g, ''));
-
-        if (looksLikeBase64) {
+        if (looksLikeBase64(content)) {
           try {
             // Try to decode from base64
             const decodedBuffer = Buffer.from(content, 'base64');

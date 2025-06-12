@@ -415,3 +415,10 @@ export async function fetchUrlContent(
     throw new Error(`Failed to fetch content from URL: ${error.message}`);
   }
 }
+
+export function looksLikeBase64(content?: string | null): boolean {
+  // const base64Regex = /^[A-Za-z0-9+/]+=*$/; // This is the old regex
+  // https://stackoverflow.com/questions/475074/regex-to-parse-or-validate-base64-data
+  const base64Regex = /^(?:[A-Za-z0-9+/]{4})*(?:[A-Za-z0-9+/]{2}==|[A-Za-z0-9+/]{3}=)?$/;
+  return content && content.length > 0 && base64Regex.test(content.replace(/\s/g, '')) || false;
+}
