@@ -15,7 +15,11 @@
     "resolveJsonModule": true,
     "moduleDetection": "force",
     "allowArbitraryExtensions": true,
-    "jsx": "react-jsx"
+    "jsx": "react-jsx",
+    "forceConsistentCasingInFileNames": true,
+    "skipLibCheck": true,
+    "allowSyntheticDefaultImports": true
   },
+  "exclude": ["node_modules", "dist"],
   "include": ["src/**/*.ts", "src/**/*.tsx"]
 }

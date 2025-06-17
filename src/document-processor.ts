@@ -9,7 +9,7 @@ import {
 } from '@elizaos/core';
 import { Buffer } from 'node:buffer';
 import { v4 as uuidv4 } from 'uuid';
-import { getProviderRateLimits, validateModelConfig } from './config.ts';
+import { validateModelConfig } from './config.ts';
 import {
   DEFAULT_CHARS_PER_TOKEN,
   DEFAULT_CHUNK_OVERLAP_TOKENS,
@@ -82,8 +82,13 @@ export async function processFragmentsSynchronously({
 
   logger.info(`Split content into ${chunks.length} chunks for document ${documentId}`);
 
-  // Get provider limits for rate limiting
-  const providerLimits = await getProviderRateLimits();
+  // Use default rate limits
+  const providerLimits = {
+    maxConcurrentRequests: 30,
+    requestsPerMinute: 60,
+    tokensPerMinute: 150000,
+    provider: 'default',
+  };
   const CONCURRENCY_LIMIT = Math.min(30, providerLimits.maxConcurrentRequests || 30);
   const rateLimiter = createRateLimiter(providerLimits.requestsPerMinute || 60);
 
@@ -487,16 +492,19 @@ async function generateContextsInBatch(
     return [];
   }
 
-  const providerLimits = await getProviderRateLimits();
+  const providerLimits = {
+    maxConcurrentRequests: 30,
+    requestsPerMinute: 60,
+    tokensPerMinute: 150000,
+    provider: 'default',
+  };
   const rateLimiter = createRateLimiter(providerLimits.requestsPerMinute || 60);
 
   // Get active provider from validateModelConfig
   const config = validateModelConfig();
   const isUsingOpenRouter = config.TEXT_PROVIDER === 'openrouter';
-  const isUsingCacheCapableModel =
-    isUsingOpenRouter &&
-    (config.TEXT_MODEL?.toLowerCase().includes('claude') ||
-      config.TEXT_MODEL?.toLowerCase().includes('gemini'));
+  // For now, assume no cache capable model since TEXT_MODEL is not in our simplified config
+  const isUsingCacheCapableModel = false;
 
   // For now custom TEXT_PROVIDER is not supported.
   // logger.info(
@@ -553,7 +561,7 @@ async function generateContextsInBatch(
           `context generation for chunk ${item.originalIndex}`
         );
 
-        const generatedContext = llmResponse.text;
+        const generatedContext = (llmResponse as any).text || llmResponse;
         const contextualizedText = getChunkWithContext(item.chunkText, generatedContext);
 
         logger.debug(

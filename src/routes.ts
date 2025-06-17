@@ -1,10 +1,10 @@
 import type { IAgentRuntime, Route, UUID, Memory, KnowledgeItem } from '@elizaos/core';
 import { MemoryType, createUniqueUuid, logger } from '@elizaos/core';
-import { KnowledgeService } from './service';
+import { KnowledgeService } from './service.ts';
 import fs from 'node:fs'; // For file operations in upload
 import path from 'node:path'; // For path operations
 import multer from 'multer'; // For handling multipart uploads
-import { fetchUrlContent, normalizeS3Url } from './utils'; // Import utils functions
+import { fetchUrlContent, normalizeS3Url } from './utils.ts'; // Import utils functions
 
 // Create multer configuration function that uses runtime settings
 const createUploadMiddleware = (runtime: IAgentRuntime) => {
@@ -507,7 +507,7 @@ async function knowledgePanelHandler(req: any, res: any, runtime: IAgentRuntime)
       // Fallback: serve a basic HTML page that loads the JS bundle from the assets folder
       // Use manifest.json to get the correct asset filenames if it exists
       let cssFile = 'index.css';
-      let jsFile = 'index.js';
+      let jsFile = 'index.ts';
 
       const manifestPath = path.join(currentDir, '../dist/manifest.json');
       if (fs.existsSync(manifestPath)) {
@@ -522,7 +522,7 @@ async function knowledgePanelHandler(req: any, res: any, runtime: IAgentRuntime)
               if (key.endsWith('.css') || (value as any).file?.endsWith('.css')) {
                 cssFile = (value as any).file || key;
               }
-              if (key.endsWith('.js') || (value as any).file?.endsWith('.js')) {
+              if (key.endsWith('.ts') || (value as any).file?.endsWith('.ts')) {
                 jsFile = (value as any).file || key;
               }
             }
@@ -606,7 +606,7 @@ async function frontendAssetHandler(req: any, res: any, runtime: IAgentRuntime) 
     if (fs.existsSync(assetPath)) {
       const fileStream = fs.createReadStream(assetPath);
       let contentType = 'application/octet-stream'; // Default
-      if (assetPath.endsWith('.js')) {
+      if (assetPath.endsWith('.ts')) {
         contentType = 'application/javascript';
       } else if (assetPath.endsWith('.css')) {
         contentType = 'text/css';
@@ -715,5 +715,21 @@ export const knowledgeRoutes: Route[] = [
     type: 'GET',
     path: '/knowledges',
     handler: getKnowledgeChunksHandler,
+  },
+  {
+    type: 'GET',
+    path: '/test-components',
+    handler: async (req: any, res: any, runtime: IAgentRuntime) => {
+      const currentDir = path.dirname(new URL(import.meta.url).pathname);
+      const testPagePath = path.join(currentDir, 'frontend', 'test-components.html');
+
+      try {
+        const htmlContent = await fs.promises.readFile(testPagePath, 'utf8');
+        res.writeHead(200, { 'Content-Type': 'text/html' });
+        res.end(htmlContent);
+      } catch (error) {
+        sendError(res, 404, 'NOT_FOUND', 'Test components page not found');
+      }
+    },
   },
 ];

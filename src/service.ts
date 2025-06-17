@@ -1,29 +1,32 @@
 import {
   Content,
+  createLogger,
   createUniqueUuid,
   FragmentMetadata,
   IAgentRuntime,
   KnowledgeItem,
-  logger,
   Memory,
   MemoryMetadata,
   MemoryType,
+  Metadata,
   ModelType,
   Semaphore,
   Service,
   splitChunks,
   UUID,
-  Metadata,
 } from '@elizaos/core';
+import { loadDocsFromPath } from './docs-loader.ts';
 import {
   createDocumentMemory,
   extractTextFromDocument,
   processFragmentsSynchronously,
 } from './document-processor.ts';
+import { DocumentRepository, FragmentRepository } from './repositories/index.ts';
+import type { KnowledgeConfig, LoadResult } from './types.ts';
 import { AddKnowledgeOptions } from './types.ts';
-import type { KnowledgeConfig, LoadResult } from './types';
-import { loadDocsFromPath } from './docs-loader';
 import { isBinaryContentType } from './utils.ts';
+
+const logger = createLogger('KnowledgeService');
 
 /**
  * Knowledge Service - Provides retrieval augmented generation capabilities
@@ -36,6 +39,9 @@ export class KnowledgeService extends Service {
     'Provides Retrieval Augmented Generation capabilities, including knowledge upload and querying.';
 
   private knowledgeProcessingSemaphore: Semaphore;
+  private documentRepo?: DocumentRepository;
+  private fragmentRepo?: FragmentRepository;
+  private useNewTables: boolean = false; // Feature flag for new implementation
 
   /**
    * Create a new Knowledge service
@@ -64,9 +70,13 @@ export class KnowledgeService extends Service {
     // Store config as Metadata for base class compatibility
     this.config = { ...this.knowledgeConfig } as Metadata;
 
+    // Check if we should use new tables (feature flag)
+    this.useNewTables = parseBooleanEnv(runtime.getSetting('KNOWLEDGE_USE_NEW_TABLES'));
+
     logger.info(
       `KnowledgeService initialized for agent ${this.runtime.agentId} with config:`,
-      this.knowledgeConfig
+      this.knowledgeConfig,
+      `useNewTables: ${this.useNewTables}`
     );
 
     if (this.knowledgeConfig.LOAD_DOCS_ON_STARTUP) {
@@ -627,7 +637,7 @@ export class KnowledgeService extends Service {
     // For now, using passed in values or defaults from _internalAddKnowledge.
     const chunks = await splitChunks(text, targetTokens, overlap);
 
-    return chunks.map((chunk, index) => {
+    return chunks.map((chunk: string, index: number) => {
       // Create a unique ID for the fragment based on document ID, index, and timestamp
       const fragmentIdContent = `${document.id}-fragment-${index}-${Date.now()}`;
       const fragmentId = createUniqueUuid(

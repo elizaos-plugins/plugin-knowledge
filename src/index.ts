@@ -5,12 +5,13 @@
  */
 import type { Plugin, IAgentRuntime } from '@elizaos/core';
 import { logger } from '@elizaos/core';
-import { validateModelConfig } from './config';
-import { KnowledgeService } from './service';
-import { knowledgeProvider } from './provider';
-import knowledgeTestSuite from './tests';
-import { knowledgeActions } from './actions';
-import { knowledgeRoutes } from './routes';
+import { validateModelConfig } from './config.ts';
+import { KnowledgeService } from './service.ts';
+import { knowledgeProvider } from './provider.ts';
+import knowledgeTestSuite from './tests.ts';
+import { knowledgeActions } from './actions.ts';
+import { knowledgeRoutes } from './routes.ts';
+import { knowledgeSchema } from './schema.ts';
 
 /**
  * Knowledge Plugin - Provides Retrieval Augmented Generation capabilities
@@ -73,7 +74,7 @@ export const knowledgePlugin: Plugin = {
             try {
               const service = runtime.getService(KnowledgeService.serviceType);
               if (service instanceof KnowledgeService) {
-                const { loadDocsFromPath } = await import('./docs-loader');
+                const { loadDocsFromPath } = await import('./docs-loader.js');
                 const result = await loadDocsFromPath(service, runtime.agentId);
                 if (result.successful > 0) {
                   logger.info(`Loaded ${result.successful} documents from docs folder on startup`);
@@ -99,8 +100,9 @@ export const knowledgePlugin: Plugin = {
   routes: knowledgeRoutes,
   actions: knowledgeActions,
   tests: [knowledgeTestSuite],
+  schema: knowledgeSchema,
 };
 
 export default knowledgePlugin;
 
-export * from './types';
+export * from './types.js';

@@ -1,4 +1,4 @@
-import { UUID } from '@elizaos/core';
+import { UUID, KnowledgeItem } from '@elizaos/core';
 import z from 'zod';
 
 // Schema for validating model configuration
@@ -118,7 +118,7 @@ export interface AddKnowledgeOptions {
    * - Plain text for text files
    */
   content: string;
-  /** 
+  /**
    * Optional metadata to associate with the knowledge
    * Used for storing additional information like source URL
    */
@@ -136,6 +136,121 @@ declare module '@elizaos/core' {
 export const KnowledgeServiceType = {
   KNOWLEDGE: 'knowledge' as const,
 } satisfies Partial<import('@elizaos/core').ServiceTypeRegistry>;
+
+/**
+ * Document represents a stored knowledge document
+ */
+export interface Document {
+  id: UUID;
+  agentId: UUID;
+  worldId: UUID;
+  roomId: UUID;
+  entityId: UUID;
+  originalFilename: string;
+  contentType: string;
+  content: string; // Base64 for PDFs, plain text for others
+  fileSize: number;
+  title?: string;
+  sourceUrl?: string;
+  createdAt: Date;
+  updatedAt: Date;
+  metadata?: Record<string, unknown>;
+}
+
+/**
+ * KnowledgeFragment represents a chunk of a document with its embedding
+ */
+export interface KnowledgeFragment {
+  id: UUID;
+  documentId: UUID;
+  agentId: UUID;
+  worldId: UUID;
+  roomId: UUID;
+  entityId: UUID;
+  content: string;
+  embedding?: number[];
+  position: number;
+  createdAt: Date;
+  metadata?: Record<string, unknown>;
+}
+
+/**
+ * Input type for creating a new document
+ */
+export interface DocumentCreateInput {
+  id: UUID;
+  agentId: UUID;
+  worldId?: UUID;
+  roomId?: UUID;
+  entityId?: UUID;
+  originalFilename: string;
+  contentType: string;
+  content: string;
+  fileSize: number;
+  title?: string;
+  sourceUrl?: string;
+  metadata?: Record<string, unknown>;
+}
+
+/**
+ * Input type for creating a new fragment
+ */
+export interface FragmentCreateInput {
+  id: UUID;
+  documentId: UUID;
+  agentId: UUID;
+  worldId?: UUID;
+  roomId?: UUID;
+  entityId?: UUID;
+  content: string;
+  embedding?: number[];
+  position: number;
+  metadata?: Record<string, unknown>;
+}
+
+/**
+ * Conversion utilities for backward compatibility
+ */
+export function documentToKnowledgeItem(doc: Document): KnowledgeItem {
+  return {
+    id: doc.id,
+    content: {
+      text: doc.content,
+    },
+    metadata: {
+      type: 'document' as const,
+      ...(doc.metadata || {}),
+      originalFilename: doc.originalFilename,
+      contentType: doc.contentType,
+      fileSize: doc.fileSize,
+      title: doc.title,
+      sourceUrl: doc.sourceUrl,
+    },
+  };
+}
+
+export function knowledgeItemToDocument(
+  item: KnowledgeItem,
+  agentId: UUID,
+  worldId: UUID,
+  roomId: UUID,
+  entityId: UUID
+): Omit<Document, 'id' | 'createdAt' | 'updatedAt'> {
+  const metadata = item.metadata || {};
+  return {
+    agentId,
+    worldId,
+    roomId,
+    entityId,
+    originalFilename: (metadata as any).originalFilename || 'unknown',
+    contentType: (metadata as any).contentType || 'text/plain',
+    content: item.content.text || '',
+    fileSize: (metadata as any).fileSize || 0,
+    title: (metadata as any).title as string | undefined,
+    sourceUrl: (metadata as any).sourceUrl as string | undefined,
+    metadata: metadata,
+  };
+}
 
 export interface KnowledgeDocumentMetadata extends Record<string, any> {
   type: string; // e.g., 'document', 'website_content'

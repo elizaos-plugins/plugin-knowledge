@@ -1,8 +1,8 @@
-import { logger, UUID, createUniqueUuid } from "@elizaos/core";
-import * as fs from "fs";
-import * as path from "path";
-import { KnowledgeService } from "./service.ts";
-import { AddKnowledgeOptions } from "./types.ts";
+import { logger, UUID, createUniqueUuid } from '@elizaos/core';
+import * as fs from 'fs';
+import * as path from 'path';
+import { KnowledgeService } from './service.ts';
+import { AddKnowledgeOptions } from './types.ts';
 import { isBinaryContentType } from './utils.ts';
 
 /**

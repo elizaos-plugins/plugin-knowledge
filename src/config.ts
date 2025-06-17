@@ -1,218 +1,101 @@
-import { ModelConfig, ModelConfigSchema, ProviderRateLimits } from './types.ts';
-import z from 'zod';
-import { logger, IAgentRuntime } from '@elizaos/core';
-
 /**
- * Validates the model configuration using runtime settings
- * @param runtime The agent runtime to get settings from
- * @returns The validated configuration or throws an error
+ * Configuration validation for the Knowledge plugin
  */
-export function validateModelConfig(runtime?: IAgentRuntime): ModelConfig {
-  try {
-    // Helper function to get setting from runtime or fallback to process.env
-    const getSetting = (key: string, defaultValue?: string) => {
-      if (runtime) {
-        return runtime.getSetting(key) || defaultValue;
-      }
-      return process.env[key] || defaultValue;
-    };
+import type { IAgentRuntime } from '@elizaos/core';
+import { logger } from '@elizaos/core';
 
-    // Determine if contextual Knowledge is enabled
-    const ctxKnowledgeEnabled = getSetting('CTX_KNOWLEDGE_ENABLED') === 'true';
-    logger.debug(`Configuration: CTX_KNOWLEDGE_ENABLED=${ctxKnowledgeEnabled}`);
-
-    // If EMBEDDING_PROVIDER is not provided, assume we're using plugin-openai
-    const embeddingProvider = getSetting('EMBEDDING_PROVIDER');
-    const assumePluginOpenAI = !embeddingProvider;
-
-    if (assumePluginOpenAI) {
-      const openaiApiKey = getSetting('OPENAI_API_KEY');
-      const openaiEmbeddingModel = getSetting('OPENAI_EMBEDDING_MODEL');
-
-      if (openaiApiKey && openaiEmbeddingModel) {
-        logger.info('EMBEDDING_PROVIDER not specified, using configuration from plugin-openai');
-      } else {
-        logger.warn(
-          'EMBEDDING_PROVIDER not specified, but plugin-openai configuration incomplete. Check OPENAI_API_KEY and OPENAI_EMBEDDING_MODEL.'
-        );
-      }
-    }
-
-    // Set embedding provider defaults based on plugin-openai if EMBEDDING_PROVIDER is not set
-    const finalEmbeddingProvider = embeddingProvider || 'openai';
-    const textEmbeddingModel =
-      getSetting('TEXT_EMBEDDING_MODEL') ||
-      getSetting('OPENAI_EMBEDDING_MODEL') ||
-      'text-embedding-3-small';
-    const embeddingDimension =
-      getSetting('EMBEDDING_DIMENSION') || getSetting('OPENAI_EMBEDDING_DIMENSIONS') || '1536';
-
-    // Use OpenAI API key from runtime settings
-    const openaiApiKey = getSetting('OPENAI_API_KEY');
-
-    const config = ModelConfigSchema.parse({
-      EMBEDDING_PROVIDER: finalEmbeddingProvider,
-      TEXT_PROVIDER: getSetting('TEXT_PROVIDER'),
-
-      OPENAI_API_KEY: openaiApiKey,
-      ANTHROPIC_API_KEY: getSetting('ANTHROPIC_API_KEY'),
-      OPENROUTER_API_KEY: getSetting('OPENROUTER_API_KEY'),
-      GOOGLE_API_KEY: getSetting('GOOGLE_API_KEY'),
-
-      OPENAI_BASE_URL: getSetting('OPENAI_BASE_URL'),
-      ANTHROPIC_BASE_URL: getSetting('ANTHROPIC_BASE_URL'),
-      OPENROUTER_BASE_URL: getSetting('OPENROUTER_BASE_URL'),
-      GOOGLE_BASE_URL: getSetting('GOOGLE_BASE_URL'),
-
-      TEXT_EMBEDDING_MODEL: textEmbeddingModel,
-      TEXT_MODEL: getSetting('TEXT_MODEL'),
-
-      MAX_INPUT_TOKENS: getSetting('MAX_INPUT_TOKENS', '4000'),
-      MAX_OUTPUT_TOKENS: getSetting('MAX_OUTPUT_TOKENS', '4096'),
-
-      EMBEDDING_DIMENSION: embeddingDimension,
-
-      CTX_KNOWLEDGE_ENABLED: ctxKnowledgeEnabled,
-    });
-
-    validateConfigRequirements(config, assumePluginOpenAI);
-    return config;
-  } catch (error) {
-    if (error instanceof z.ZodError) {
-      const issues = error.issues
-        .map((issue) => `${issue.path.join('.')}: ${issue.message}`)
-        .join(', ');
-      throw new Error(`Model configuration validation failed: ${issues}`);
-    }
-    throw error;
-  }
+export interface ValidatedModelConfig {
+  CTX_KNOWLEDGE_ENABLED: boolean;
+  LOAD_DOCS_ON_STARTUP: boolean;
+  MAX_INPUT_TOKENS?: number;
+  MAX_OUTPUT_TOKENS?: number;
+  EMBEDDING_PROVIDER: string;
+  TEXT_PROVIDER?: string;
+  TEXT_EMBEDDING_MODEL: string;
 }
 
 /**
- * Validates the required API keys and configuration based on the selected mode
- * @param config The model configuration to validate
- * @param assumePluginOpenAI Whether we're assuming plugin-openai is being used
- * @throws Error if a required configuration value is missing
+ * Validates the model configuration for the Knowledge plugin
+ * @param runtime The agent runtime instance
+ * @returns Validated configuration object
  */
-function validateConfigRequirements(config: ModelConfig, assumePluginOpenAI: boolean): void {
-  // Skip validation for embedding provider if we're using plugin-openai's configuration
-  if (!assumePluginOpenAI) {
-    // Only validate embedding provider if not using plugin-openai
-    if (config.EMBEDDING_PROVIDER === 'openai' && !config.OPENAI_API_KEY) {
-      throw new Error('OPENAI_API_KEY is required when EMBEDDING_PROVIDER is set to "openai"');
-    }
-    if (config.EMBEDDING_PROVIDER === 'google' && !config.GOOGLE_API_KEY) {
-      throw new Error('GOOGLE_API_KEY is required when EMBEDDING_PROVIDER is set to "google"');
-    }
-  } else {
-    // If we're assuming plugin-openai, make sure we have the required values
-    if (!config.OPENAI_API_KEY) {
-      throw new Error('OPENAI_API_KEY is required when using plugin-openai configuration');
-    }
-    if (!config.TEXT_EMBEDDING_MODEL) {
-      throw new Error('OPENAI_EMBEDDING_MODEL is required when using plugin-openai configuration');
+export function validateModelConfig(runtime?: IAgentRuntime): ValidatedModelConfig {
+  // Check if CTX_KNOWLEDGE_ENABLED is set
+  const ctxKnowledgeEnabled =
+    runtime?.getSetting('CTX_KNOWLEDGE_ENABLED') === 'true' ||
+    process.env.CTX_KNOWLEDGE_ENABLED === 'true' ||
+    false;
+
+  // Check if docs should be loaded on startup
+  const loadDocsOnStartup =
+    runtime?.getSetting('LOAD_DOCS_ON_STARTUP') !== 'false' &&
+    process.env.LOAD_DOCS_ON_STARTUP !== 'false';
+
+  // Get token limits
+  const maxInputTokens = parseInt(
+    runtime?.getSetting('MAX_INPUT_TOKENS') || process.env.MAX_INPUT_TOKENS || '4000'
+  );
+  const maxOutputTokens = parseInt(
+    runtime?.getSetting('MAX_OUTPUT_TOKENS') || process.env.MAX_OUTPUT_TOKENS || '4096'
+  );
+
+  // Get embedding provider configuration
+  let embeddingProvider =
+    runtime?.getSetting('EMBEDDING_PROVIDER') || process.env.EMBEDDING_PROVIDER || '';
+  let textEmbeddingModel =
+    runtime?.getSetting('TEXT_EMBEDDING_MODEL') || process.env.TEXT_EMBEDDING_MODEL || '';
+
+  // Auto-detect from plugin-openai if not explicitly set
+  if (!embeddingProvider && runtime) {
+    // Since getModel returns a function, we can't check provider directly
+    // Instead, just default to openai if not set
+    embeddingProvider = 'openai';
+    textEmbeddingModel = textEmbeddingModel || 'text-embedding-3-small';
+    logger.info('Defaulting to OpenAI provider for embeddings');
+  }
+
+  // Get text generation provider configuration (only needed if CTX_KNOWLEDGE_ENABLED)
+  let textProvider: string | undefined;
+  if (ctxKnowledgeEnabled) {
+    textProvider = runtime?.getSetting('TEXT_PROVIDER') || process.env.TEXT_PROVIDER || '';
+
+    // Auto-detect text provider if not set
+    if (!textProvider && runtime) {
+      // Default to openai if not set
+      textProvider = 'openai';
+      logger.info('Defaulting to OpenAI provider for text generation');
     }
   }
 
-  // If Contextual Knowledge is enabled, we need additional validations
-  if (config.CTX_KNOWLEDGE_ENABLED) {
-    logger.info('Contextual Knowledge is enabled. Validating text generation settings...');
-
-    // Validate API keys based on the text provider
-    if (config.TEXT_PROVIDER === 'openai' && !config.OPENAI_API_KEY) {
-      throw new Error('OPENAI_API_KEY is required when TEXT_PROVIDER is set to "openai"');
-    }
-    if (config.TEXT_PROVIDER === 'anthropic' && !config.ANTHROPIC_API_KEY) {
-      throw new Error('ANTHROPIC_API_KEY is required when TEXT_PROVIDER is set to "anthropic"');
-    }
-    if (config.TEXT_PROVIDER === 'openrouter' && !config.OPENROUTER_API_KEY) {
-      throw new Error('OPENROUTER_API_KEY is required when TEXT_PROVIDER is set to "openrouter"');
-    }
-    if (config.TEXT_PROVIDER === 'google' && !config.GOOGLE_API_KEY) {
-      throw new Error('GOOGLE_API_KEY is required when TEXT_PROVIDER is set to "google"');
-    }
-
-    // If using OpenRouter with Claude or Gemini models, check for additional recommended configurations
-    if (config.TEXT_PROVIDER === 'openrouter') {
-      const modelName = config.TEXT_MODEL?.toLowerCase() || '';
-      if (modelName.includes('claude') || modelName.includes('gemini')) {
-        logger.info(
-          `Using ${modelName} with OpenRouter. This configuration supports document caching for improved performance.`
-        );
-      }
-    }
-  } else {
-    // Log appropriate message based on where embedding config came from
-    if (assumePluginOpenAI) {
-      logger.info(
-        'Contextual Knowledge is disabled. Using embedding configuration from plugin-openai.'
-      );
-    } else {
-      logger.info('Contextual Knowledge is disabled. Using basic embedding-only configuration.');
-    }
+  // Validate required configurations
+  if (!embeddingProvider) {
+    throw new Error(
+      'Knowledge plugin requires an embedding provider. ' +
+        'Please set EMBEDDING_PROVIDER environment variable or ensure plugin-openai is loaded.'
+    );
   }
-}
 
-/**
- * Returns rate limit information for the configured providers
- *
- * @param runtime The agent runtime to get settings from
- * @returns Rate limit configuration for the current providers
- */
-export async function getProviderRateLimits(runtime?: IAgentRuntime): Promise<ProviderRateLimits> {
-  const config = validateModelConfig(runtime);
+  if (!textEmbeddingModel) {
+    throw new Error(
+      'Knowledge plugin requires TEXT_EMBEDDING_MODEL to be set. ' +
+        'Example: TEXT_EMBEDDING_MODEL=text-embedding-3-small'
+    );
+  }
 
-  // Helper function to get setting from runtime or fallback to process.env
-  const getSetting = (key: string, defaultValue: string) => {
-    if (runtime) {
-      return runtime.getSetting(key) || defaultValue;
-    }
-    return process.env[key] || defaultValue;
+  if (ctxKnowledgeEnabled && !textProvider) {
+    throw new Error(
+      'When CTX_KNOWLEDGE_ENABLED=true, TEXT_PROVIDER must be set. ' +
+        'Example: TEXT_PROVIDER=openai'
+    );
+  }
+
+  return {
+    CTX_KNOWLEDGE_ENABLED: ctxKnowledgeEnabled,
+    LOAD_DOCS_ON_STARTUP: loadDocsOnStartup,
+    MAX_INPUT_TOKENS: maxInputTokens,
+    MAX_OUTPUT_TOKENS: maxOutputTokens,
+    EMBEDDING_PROVIDER: embeddingProvider,
+    TEXT_PROVIDER: textProvider,
+    TEXT_EMBEDDING_MODEL: textEmbeddingModel,
   };
-
-  // Get rate limit values from runtime settings or use defaults
-  const maxConcurrentRequests = parseInt(getSetting('MAX_CONCURRENT_REQUESTS', '30'), 10);
-  const requestsPerMinute = parseInt(getSetting('REQUESTS_PER_MINUTE', '60'), 10);
-  const tokensPerMinute = parseInt(getSetting('TOKENS_PER_MINUTE', '150000'), 10);
-
-  // Provider-specific rate limits
-  switch (config.EMBEDDING_PROVIDER) {
-    case 'openai':
-      // OpenAI typically allows 150,000 tokens per minute for embeddings
-      // and up to 3,000 RPM for Tier 4+ accounts
-      return {
-        maxConcurrentRequests,
-        requestsPerMinute: Math.min(requestsPerMinute, 3000),
-        tokensPerMinute: Math.min(tokensPerMinute, 150000),
-        provider: 'openai',
-      };
-
-    case 'google':
-      // Google's default is 60 requests per minute
-      return {
-        maxConcurrentRequests,
-        requestsPerMinute: Math.min(requestsPerMinute, 60),
-        tokensPerMinute: Math.min(tokensPerMinute, 100000),
-        provider: 'google',
-      };
-
-    default:
-      // Use default values for unknown providers
-      return {
-        maxConcurrentRequests,
-        requestsPerMinute,
-        tokensPerMinute,
-        provider: config.EMBEDDING_PROVIDER,
-      };
-  }
-}
-
-/**
- * Helper function to get integer value from environment variables
- * @param envVar The environment variable name
- * @param defaultValue The default value if not present
- * @returns The parsed integer value
- */
-function getEnvInt(envVar: string, defaultValue: number): number {
-  return process.env[envVar] ? parseInt(process.env[envVar]!, 10) : defaultValue;
 }
