@@ -103,6 +103,8 @@ export interface TextGenerationOptions {
  * Options for adding knowledge to the system
  */
 export interface AddKnowledgeOptions {
+  /** Agent ID from the frontend - if not provided, will use runtime.agentId */
+  agentId?: UUID;
   worldId: UUID;
   roomId: UUID;
   entityId: UUID;

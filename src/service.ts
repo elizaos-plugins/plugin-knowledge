@@ -24,7 +24,7 @@ import {
 import { DocumentRepository, FragmentRepository } from './repositories/index.ts';
 import type { KnowledgeConfig, LoadResult } from './types.ts';
 import { AddKnowledgeOptions } from './types.ts';
-import { isBinaryContentType } from './utils.ts';
+import { isBinaryContentType, looksLikeBase64 } from './utils.ts';
 
 const logger = createLogger('KnowledgeService');
 
@@ -176,9 +176,10 @@ export class KnowledgeService extends Service {
     storedDocumentMemoryId: UUID;
     fragmentCount: number;
   }> {
-    const agentId = this.runtime.agentId as string;
+    // Use agentId from options if provided (from frontend), otherwise fall back to runtime
+    const agentId = options.agentId || (this.runtime.agentId as UUID);
     logger.info(
-      `KnowledgeService (agent: ${agentId}) processing document for public addKnowledge: ${options.originalFilename}, type: ${options.contentType}`
+      `KnowledgeService processing document for agent: ${agentId}, file: ${options.originalFilename}, type: ${options.contentType}`
     );
 
     // Check if document already exists in database using clientDocumentId as the primary key for "documents" table
@@ -229,6 +230,7 @@ export class KnowledgeService extends Service {
    * @returns Promise with document processing result
    */
   private async processDocument({
+    agentId: passedAgentId,
     clientDocumentId,
     contentType,
     originalFilename,
@@ -242,11 +244,12 @@ export class KnowledgeService extends Service {
     storedDocumentMemoryId: UUID;
     fragmentCount: number;
   }> {
-    const agentId = this.runtime.agentId as UUID;
+    // Use agentId from options if provided (from frontend), otherwise fall back to runtime
+    const agentId = passedAgentId || (this.runtime.agentId as UUID);
 
     try {
       logger.debug(
-        `KnowledgeService: Processing document ${originalFilename} (type: ${contentType}) via processDocument`
+        `KnowledgeService: Processing document ${originalFilename} (type: ${contentType}) via processDocument for agent: ${agentId}`
       );
 
       let fileBuffer: Buffer | null = null;
@@ -284,11 +287,7 @@ export class KnowledgeService extends Service {
         // Routes always send base64, but docs-loader sends plain text
 
         // First, check if this looks like base64
-        const base64Regex = /^[A-Za-z0-9+/]+=*$/;
-        const looksLikeBase64 =
-          content && content.length > 0 && base64Regex.test(content.replace(/\s/g, ''));
-
-        if (looksLikeBase64) {
+        if (looksLikeBase64(content)) {
           try {
             // Try to decode from base64
             const decodedBuffer = Buffer.from(content, 'base64');
@@ -460,7 +459,7 @@ export class KnowledgeService extends Service {
       try {
         // For character knowledge, the item itself (string) is the source.
         // A unique ID is generated from this string content.
-        const knowledgeId = createUniqueUuid(this.runtime.agentId + item, item); // Use agentId in seed for uniqueness
+        const knowledgeId = createUniqueUuid(this.runtime, this.runtime.agentId + item); // Use agentId in seed for uniqueness
 
         if (await this.checkExistingKnowledge(knowledgeId)) {
           logger.debug(
@@ -641,8 +640,8 @@ export class KnowledgeService extends Service {
       // Create a unique ID for the fragment based on document ID, index, and timestamp
       const fragmentIdContent = `${document.id}-fragment-${index}-${Date.now()}`;
       const fragmentId = createUniqueUuid(
-        this.runtime.agentId + fragmentIdContent,
-        fragmentIdContent
+        this.runtime,
+        this.runtime.agentId + fragmentIdContent
       );
 
       return {
@@ -682,6 +681,7 @@ export class KnowledgeService extends Service {
   }): Promise<Memory[]> {
     return this.runtime.getMemories({
       ...params, // includes tableName, roomId, count, end
+      agentId: this.runtime.agentId,
     });
   }
 

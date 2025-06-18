@@ -10,6 +10,8 @@ import {
   Upload,
   List,
   Network,
+  Search,
+  Info,
 } from 'lucide-react';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
@@ -309,6 +311,21 @@ const apiClient = {
     }
     return await response.json();
   },
+
+  searchKnowledge: async (agentId: UUID, query: string, threshold: number = 0.5, limit: number = 20) => {
+    const params = new URLSearchParams();
+    params.append('agentId', agentId);
+    params.append('q', query);
+    params.append('threshold', threshold.toString());
+    params.append('limit', limit.toString());
+
+    const response = await fetch(`/api/search?${params.toString()}`);
+    if (!response.ok) {
+      const errorText = await response.text();
+      throw new Error(`Failed to search knowledge: ${response.status} ${errorText}`);
+    }
+    return await response.json();
+  },
 };
 
 const useKnowledgeDocuments = (
@@ -403,6 +420,14 @@ export function KnowledgeTab({ agentId }: { agentId: UUID }) {
   const [urlError, setUrlError] = useState<string | null>(null);
   const [urls, setUrls] = useState<string[]>([]);
 
+  // Search-related states
+  const [showSearch, setShowSearch] = useState(false);
+  const [searchQuery, setSearchQuery] = useState('');
+  const [searchThreshold, setSearchThreshold] = useState(0.5);
+  const [searchResults, setSearchResults] = useState<any[]>([]);
+  const [isSearching, setIsSearching] = useState(false);
+  const [searchError, setSearchError] = useState<string | null>(null);
+
   const fileInputRef = useRef<HTMLInputElement>(null);
   const scrollContainerRef = useRef<HTMLDivElement>(null);
   const { toast } = useToast();
@@ -413,14 +438,14 @@ export function KnowledgeTab({ agentId }: { agentId: UUID }) {
     data: documentsOnly = [],
     isLoading: documentsLoading,
     error: documentsError,
-  } = useKnowledgeDocuments(agentId, viewMode === 'list', false);
+  } = useKnowledgeDocuments(agentId, viewMode === 'list' && !showSearch, false);
 
   // Graph mode: use useKnowledgeChunks to get documents and fragments
   const {
     data: graphMemories = [],
     isLoading: graphLoading,
     error: graphError,
-  } = useKnowledgeChunks(agentId, viewMode === 'graph', documentIdFilter);
+  } = useKnowledgeChunks(agentId, viewMode === 'graph' && !showSearch, documentIdFilter);
 
   // Use the appropriate data based on the mode
   const isLoading = viewMode === 'list' ? documentsLoading : graphLoading;
@@ -669,6 +694,31 @@ export function KnowledgeTab({ agentId }: { agentId: UUID }) {
     }
   };
 
+  const handleSearch = async () => {
+    if (!searchQuery.trim()) {
+      setSearchError('Please enter a search query');
+      return;
+    }
+
+    setIsSearching(true);
+    setSearchError(null);
+    setSearchResults([]);
+
+    try {
+      const result = await apiClient.searchKnowledge(agentId, searchQuery, searchThreshold);
+      setSearchResults(result.data.results || []);
+
+      if (result.data.results.length === 0) {
+        setSearchError('No results found. Try adjusting your search query or lowering the similarity threshold.');
+      }
+    } catch (error: any) {
+      setSearchError(error.message || 'Failed to search knowledge');
+      setSearchResults([]);
+    } finally {
+      setIsSearching(false);
+    }
+  };
+
   const visibleMemories = memories.slice(0, visibleItems);
   const hasMoreToLoad = visibleItems < memories.length;
 
@@ -865,9 +915,11 @@ export function KnowledgeTab({ agentId }: { agentId: UUID }) {
         <div className="flex flex-col gap-1">
           <h2 className="text-lg font-semibold">Knowledge</h2>
           <p className="text-xs text-muted-foreground">
-            {viewMode === 'list'
-              ? 'Viewing documents only'
-              : 'Viewing documents and their fragments'}
+            {showSearch
+              ? 'Searching knowledge fragments'
+              : viewMode === 'list'
+                ? 'Viewing documents only'
+                : 'Viewing documents and their fragments'}
           </p>
         </div>
         <div className="flex items-center gap-2 w-full sm:w-auto">
@@ -881,6 +933,7 @@ export function KnowledgeTab({ agentId }: { agentId: UUID }) {
                 ? 'Switch to Graph view to see documents and fragments'
                 : 'Switch to List view to see documents only'
             }
+            disabled={showSearch}
           >
             {viewMode === 'list' ? (
               <>
@@ -896,7 +949,7 @@ export function KnowledgeTab({ agentId }: { agentId: UUID }) {
               </>
             )}
           </Button>
-          {viewMode === 'graph' && documentIdFilter && (
+          {viewMode === 'graph' && documentIdFilter && !showSearch && (
             <Button
               variant="outline"
               size="sm"
@@ -909,10 +962,27 @@ export function KnowledgeTab({ agentId }: { agentId: UUID }) {
           )}
           <div className="flex gap-2 ml-auto sm:ml-0">
             <Button
+              variant={showSearch ? "default" : "outline"}
+              onClick={() => {
+                setShowSearch(!showSearch);
+                if (showSearch) { // if turning search OFF
+                  setSearchQuery('');
+                  setSearchResults([]);
+                  setSearchError(null);
+                }
+              }}
+              size="sm"
+              className="flex-shrink-0"
+            >
+              <Search className="h-4 w-4 sm:mr-2" />
+              <span className="hidden sm:inline">Search</span>
+            </Button>
+            <Button
               variant="outline"
               onClick={handleUrlUploadClick}
               size="sm"
               className="flex-shrink-0"
+              disabled={showSearch}
             >
               <svg
                 xmlns="http://www.w3.org/2000/svg"
@@ -931,7 +1001,7 @@ export function KnowledgeTab({ agentId }: { agentId: UUID }) {
             </Button>
             <Button
               onClick={handleUploadClick}
-              disabled={isUploading}
+              disabled={isUploading || showSearch}
               size="sm"
               className="flex-shrink-0"
             >
@@ -945,6 +1015,73 @@ export function KnowledgeTab({ agentId }: { agentId: UUID }) {
           </div>
         </div>
       </div>
+
+      {/* Search Panel */}
+      {showSearch && (
+        <div className="border-b border-border bg-muted/30 p-4">
+          <div className="space-y-4">
+            <div className="flex items-center gap-2">
+              <Info className="h-4 w-4 text-muted-foreground flex-shrink-0" />
+              <p className="text-sm text-muted-foreground">
+                Search your knowledge base using semantic vector search. Adjust the similarity threshold to control how closely results must match your query.
+              </p>
+            </div>
+
+            <div className="space-y-3">
+              <div className="flex gap-2">
+                <Input
+                  placeholder="Enter your search query..."
+                  value={searchQuery}
+                  onChange={(e) => setSearchQuery(e.target.value)}
+                  onKeyDown={(e: React.KeyboardEvent<HTMLInputElement>) => {
+                    if (e.key === 'Enter' && searchQuery.trim()) {
+                      e.preventDefault();
+                      handleSearch();
+                    }
+                  }}
+                  className="flex-1"
+                />
+                <Button
+                  onClick={handleSearch}
+                  disabled={isSearching || !searchQuery.trim()}
+                  size="sm"
+                  className="px-6"
+                >
+                  {isSearching ? (
+                    <LoaderIcon className="h-4 w-4 animate-spin" />
+                  ) : (
+                    <Search className="h-4 w-4" />
+                  )}
+                </Button>
+              </div>
+
+              <div className="space-y-2">
+                <div className="flex items-center justify-between">
+                  <label className="text-sm font-medium">
+                    Similarity Threshold
+                  </label>
+                  <span className="text-sm text-muted-foreground">
+                    {searchThreshold.toFixed(2)} ({Math.round(searchThreshold * 100)}% match)
+                  </span>
+                </div>
+                <input
+                  type="range"
+                  min="0"
+                  max="1"
+                  step="0.05"
+                  value={searchThreshold}
+                  onChange={(e) => setSearchThreshold(parseFloat(e.target.value))}
+                  className="w-full h-2 bg-gray-200 rounded-lg appearance-none cursor-pointer dark:bg-gray-700"
+                />
+                <div className="flex justify-between text-xs text-muted-foreground">
+                  <span>0% (least similar)</span>
+                  <span>100% (exact match)</span>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Dialog for URL upload */}
       {showUrlDialog && (
@@ -1065,7 +1202,64 @@ export function KnowledgeTab({ agentId }: { agentId: UUID }) {
       />
 
       <div className="flex-1 overflow-hidden">
-        {memories.length === 0 ? (
+        {showSearch ? (
+          <div className="h-full overflow-y-auto p-4">
+            {isSearching && (
+              <div className="flex items-center justify-center h-full">
+                <LoaderIcon className="h-8 w-8 animate-spin text-muted-foreground" />
+              </div>
+            )}
+            {searchError && !isSearching && (
+              <div className="flex items-center justify-center h-full text-center">
+                <div className="p-4 bg-destructive/10 text-destructive rounded-md">
+                  {searchError}
+                </div>
+              </div>
+            )}
+            {searchResults.length > 0 && !isSearching && (
+              <div className="space-y-3">
+                <h3 className="text-sm font-medium">
+                  Found {searchResults.length} result{searchResults.length !== 1 ? 's' : ''}
+                </h3>
+                <div className="space-y-2">
+                  {searchResults.map((result, index) => (
+                    <div
+                      key={result.id || index}
+                      className="border border-border rounded-md p-3 bg-card hover:bg-accent/10 transition-colors"
+                    >
+                      <div className="flex items-start justify-between mb-2">
+                        <div className="flex items-center gap-2">
+                          <Badge variant="outline" className="text-xs">
+                            {(result.similarity * 100).toFixed(1)}% match
+                          </Badge>
+                          <span className="text-xs text-muted-foreground">
+                            {result.metadata?.documentFilename || 'Unknown Document'}
+                          </span>
+                        </div>
+                      </div>
+                      <p className="text-sm line-clamp-3">
+                        {result.content?.text || 'No content'}
+                      </p>
+                      {result.metadata?.position !== undefined && (
+                        <div className="text-xs text-muted-foreground mt-1">
+                          Fragment position: {result.metadata.position}
+                        </div>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+            {!isSearching && searchResults.length === 0 && !searchError && (
+              <div className="flex items-center justify-center h-full text-center text-muted-foreground">
+                <div className="flex flex-col items-center gap-2">
+                  <Search className="h-10 w-10 opacity-30" />
+                  <p>Enter a query to search your knowledge base.</p>
+                </div>
+              </div>
+            )}
+          </div>
+        ) : memories.length === 0 ? (
           <EmptyState />
         ) : viewMode === 'graph' ? (
           <div className="flex flex-col h-full">

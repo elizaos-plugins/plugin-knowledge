@@ -97,13 +97,18 @@ export async function loadDocsFromPath(
 
       // Create knowledge options
       const knowledgeOptions: AddKnowledgeOptions = {
-        clientDocumentId: createUniqueUuid(agentId, `docs-${fileName}-${Date.now()}`) as UUID,
+        clientDocumentId: createUniqueUuid((service as any).runtime, `docs-${fileName}-${Date.now()}`) as UUID,
         contentType,
         originalFilename: fileName,
         worldId: worldId || agentId,
         content,
         roomId: agentId,
         entityId: agentId,
+        metadata: {
+          source: 'docs',
+          path: filePath,
+          loadedAt: new Date().toISOString(),
+        },
       };
 
       // Process the document

@@ -12,6 +12,8 @@ import knowledgeTestSuite from './tests.ts';
 import { knowledgeActions } from './actions.ts';
 import { knowledgeRoutes } from './routes.ts';
 import { knowledgeSchema } from './schema.ts';
+import knowledgeE2ETest from './__tests__/e2e/knowledge-e2e.test.ts';
+import startupLoadingTest from './__tests__/e2e/startup-loading.test.ts';
 
 /**
  * Knowledge Plugin - Provides Retrieval Augmented Generation capabilities

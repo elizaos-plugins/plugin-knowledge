@@ -5,7 +5,7 @@ import type { IAgentRuntime, Memory, Content, State, UUID } from '@elizaos/core'
 import * as fs from 'fs';
 import * as path from 'path';
 
-// Mock @elizaos/core logger and createUniqueUuid
+// Mock @elizaos/core logger and stringToUuid
 vi.mock('@elizaos/core', async () => {
   const actual = await vi.importActual<typeof import('@elizaos/core')>('@elizaos/core');
   return {
@@ -16,10 +16,12 @@ vi.mock('@elizaos/core', async () => {
       info: vi.fn(),
       debug: vi.fn(),
     },
-    createUniqueUuid: vi.fn(
-      // eslint-disable-next-line @typescript-eslint/no-unused-vars
-      (seed: string, name: string) => `mocked-uuid-${name}` as UUID
-    ),
+    stringToUuid: vi.fn((input: string) => {
+      // Generate consistent UUIDs for testing
+      const hash = input.split('').reduce((acc, char) => acc + char.charCodeAt(0), 0);
+      const uuid = `${hash.toString(16).padStart(8, '0')}-${hash.toString(16).padStart(4, '0')}-${hash.toString(16).padStart(4, '0')}-${hash.toString(16).padStart(4, '0')}-${hash.toString(16).padStart(12, '0')}`;
+      return uuid as UUID;
+    }),
   };
 });
 
@@ -76,6 +78,9 @@ describe('processKnowledgeAction', () => {
         roomId: generateMockUuid(3),
       };
 
+      // Mock Date.now() for this test to generate predictable clientDocumentId's
+      const dateNowSpy = vi.spyOn(Date, 'now').mockReturnValue(1749491066994);
+
       (fs.existsSync as Mock).mockReturnValue(true);
       (fs.readFileSync as Mock).mockReturnValue(Buffer.from('file content'));
       (path.basename as Mock).mockReturnValue('document.pdf');
@@ -87,17 +92,20 @@ describe('processKnowledgeAction', () => {
       expect(fs.existsSync).toHaveBeenCalledWith('/path/to/document.pdf');
       expect(fs.readFileSync).toHaveBeenCalledWith('/path/to/document.pdf');
       expect(mockKnowledgeService.addKnowledge).toHaveBeenCalledWith({
-        clientDocumentId: 'mocked-uuid-document.pdf' as UUID,
-        contentType: 'application/pdf',
-        originalFilename: 'document.pdf',
-        worldId: 'test-agent' as UUID,
-        content: Buffer.from('file content').toString('base64'),
+        clientDocumentId: expect.any(String),
+        contentType: "application/pdf",
+        originalFilename: "document.pdf",
+        worldId: "test-agent" as UUID,
+        content: Buffer.from("file content").toString("base64"),
         roomId: message.roomId,
         entityId: message.entityId,
       });
       expect(mockCallback).toHaveBeenCalledWith({
         text: `I've successfully processed the document "document.pdf". It has been split into 5 searchable fragments and added to my knowledge base.`,
       });
+
+      // Restore Date.now() after the test
+      dateNowSpy.mockRestore();
     });
 
     it('should return a message if the file path is provided but file does not exist', async () => {
@@ -138,11 +146,11 @@ describe('processKnowledgeAction', () => {
 
       expect(fs.existsSync).not.toHaveBeenCalled();
       expect(mockKnowledgeService.addKnowledge).toHaveBeenCalledWith({
-        clientDocumentId: 'mocked-uuid-user-knowledge' as UUID,
-        contentType: 'text/plain',
-        originalFilename: 'user-knowledge.txt',
-        worldId: 'test-agent' as UUID,
-        content: 'to your knowledge: The capital of France is Paris.',
+        clientDocumentId: expect.any(String),
+        contentType: "text/plain",
+        originalFilename: "user-knowledge.txt",
+        worldId: "test-agent" as UUID,
+        content: "to your knowledge: The capital of France is Paris.",
         roomId: message.roomId,
         entityId: message.entityId,
       });
@@ -191,6 +199,138 @@ describe('processKnowledgeAction', () => {
       expect(mockCallback).toHaveBeenCalledWith({
         text: 'I encountered an error while processing the knowledge: Service error',
       });
+    });
+
+    it("should generate unique clientDocumentId's for different documents and content", async () => {
+      // Mock Date.now() for this test to generate predictable clientDocumentId's
+      const dateNowSpy = vi.spyOn(Date, 'now').mockReturnValue(1749491066994);
+      
+      // Test with two different files
+      const fileMessage1: Memory = {
+        id: generateMockUuid(28),
+        content: {
+          text: "Process the document at /path/to/doc1.pdf",
+        },
+        entityId: generateMockUuid(29),
+        roomId: generateMockUuid(30),
+      };
+
+      const fileMessage2: Memory = {
+        id: generateMockUuid(31),
+        content: {
+          text: "Process the document at /path/to/doc2.pdf",
+        },
+        entityId: generateMockUuid(32),
+        roomId: generateMockUuid(33),
+      };
+
+      // Test with direct text content
+      const textMessage: Memory = {
+        id: generateMockUuid(34),
+        content: {
+          text: "Add this to your knowledge: Some unique content here.",
+        },
+        entityId: generateMockUuid(35),
+        roomId: generateMockUuid(36),
+      };
+
+      // Setup mocks for file operations
+      (fs.existsSync as Mock).mockReturnValue(true);
+      (fs.readFileSync as Mock).mockReturnValue(Buffer.from("file content"));
+      (path.basename as Mock)
+        .mockReturnValueOnce("doc1.pdf")
+        .mockReturnValueOnce("doc2.pdf");
+      (path.extname as Mock)
+        .mockReturnValueOnce(".pdf")
+        .mockReturnValueOnce(".pdf");
+
+      // Process all three messages
+      await processKnowledgeAction.handler?.(mockRuntime, fileMessage1, mockState, {}, mockCallback);
+      await processKnowledgeAction.handler?.(mockRuntime, fileMessage2, mockState, {}, mockCallback);
+      await processKnowledgeAction.handler?.(mockRuntime, textMessage, mockState, {}, mockCallback);
+
+      // Get all calls to addKnowledge
+      const addKnowledgeCalls = (mockKnowledgeService.addKnowledge as Mock).mock.calls;
+
+      // Extract clientDocumentId's from the knowledgeOptions objects
+      const clientDocumentIds = addKnowledgeCalls.map(call => call[0].clientDocumentId);
+
+      // Verify we have 3 unique IDs
+      expect(clientDocumentIds.length).toBe(3);
+      expect(new Set(clientDocumentIds).size).toBe(3);
+
+      // Verify the IDs are strings of the expected format
+      const [file1Id, file2Id, textId] = clientDocumentIds;
+      
+      // Verify all IDs are valid UUID-like strings
+      expect(file1Id).toMatch(/^[0-9a-f-]+$/);
+      expect(file2Id).toMatch(/^[0-9a-f-]+$/);
+      expect(textId).toMatch(/^[0-9a-f-]+$/);
+
+      // Verify all IDs are different
+      expect(file1Id).not.toBe(file2Id);
+      expect(file1Id).not.toBe(textId);
+      expect(file2Id).not.toBe(textId);
+
+      // Restore Date.now() after the test
+      dateNowSpy.mockRestore();
+    });
+
+    it("should generate unique clientDocumentId's for same content but different time", async () => {
+      // Mock Date.now() for this test to generate predictable clientDocumentId's
+      const dateNowSpy = vi.spyOn(Date, 'now').mockReturnValue(1749491066994);
+      
+      // Test with two different files
+      const textMessage1: Memory = {
+        id: generateMockUuid(28),
+        content: {
+          text: "Add this to your knowledge: Some unique content here.",
+        },
+        entityId: generateMockUuid(29),
+        roomId: generateMockUuid(30),
+      };
+
+      const textMessage2: Memory = {
+        id: generateMockUuid(31),
+        content: {
+          text: "Add this to your knowledge: Some unique content here.",
+        },
+        entityId: generateMockUuid(32),
+        roomId: generateMockUuid(33),
+      };
+
+
+      // Process all three messages
+      await processKnowledgeAction.handler?.(mockRuntime, textMessage1, mockState, {}, mockCallback);
+
+      // Change Date.now() mock to generate a different timestamp
+      dateNowSpy.mockRestore();
+      const dateNowSpy2 = vi.spyOn(Date, 'now').mockReturnValue(1749491066995);
+
+      await processKnowledgeAction.handler?.(mockRuntime, textMessage2, mockState, {}, mockCallback);
+
+      // Get all calls to addKnowledge
+      const addKnowledgeCalls = (mockKnowledgeService.addKnowledge as Mock).mock.calls;
+
+      // Extract clientDocumentId's from the knowledgeOptions objects
+      const clientDocumentIds = addKnowledgeCalls.map(call => call[0].clientDocumentId);
+
+      // Verify we have 2 unique IDs
+      expect(clientDocumentIds.length).toBe(2);
+      expect(new Set(clientDocumentIds).size).toBe(2);
+
+      // Verify the IDs match the expected patterns
+      const [textId1, textId2] = clientDocumentIds;
+      
+      // Verify both are valid UUID-like strings
+      expect(textId1).toMatch(/^[0-9a-f-]+$/);
+      expect(textId2).toMatch(/^[0-9a-f-]+$/);
+      
+      // Verify they are different
+      expect(textId1).not.toBe(textId2);
+
+      // Restore Date.now() after the test
+      dateNowSpy2.mockRestore();
     });
   });
 

@@ -21,6 +21,9 @@ import knowledgePlugin from './index.ts';
 import { knowledgeProvider } from './provider.ts';
 import { KnowledgeService } from './service.ts';
 import { isBinaryContentType } from './utils.ts';
+import knowledgeE2ETest from './__tests__/e2e/knowledge-e2e.test.ts';
+import startupLoadingTest from './__tests__/e2e/startup-loading.test.ts';
+import attachmentHandlingTest from './__tests__/e2e/attachment-handling.test.ts';
 
 // Define an interface for the mock logger functions
 interface MockLogFunction extends Function {
@@ -338,7 +341,7 @@ function createMockRuntime(overrides?: Partial<IAgentRuntime>): IAgentRuntime {
 
     async registerService(ServiceClass: typeof Service) {
       const service = await ServiceClass.start(this);
-      services.set(ServiceClass.serviceType, service);
+      services.set((ServiceClass as any).serviceType, service);
     },
 
     registerDatabaseAdapter(adapter: any) {},
@@ -1221,6 +1224,20 @@ export class KnowledgeTestSuite implements TestSuite {
           delete process.env.KNOWLEDGE_PATH;
         }
       },
+    },
+
+    // E2E Tests
+    {
+      name: knowledgeE2ETest.name,
+      fn: knowledgeE2ETest.fn,
+    },
+    {
+      name: startupLoadingTest.name,
+      fn: startupLoadingTest.fn,
+    },
+    {
+      name: attachmentHandlingTest.name,
+      fn: attachmentHandlingTest.fn,
     },
   ];
 }
