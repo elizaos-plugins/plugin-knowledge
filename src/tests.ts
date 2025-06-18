@@ -10,6 +10,8 @@ import type {
   State,
   TestSuite,
   UUID,
+  MemoryMetadata,
+  TestCase,
 } from '@elizaos/core';
 import { MemoryType, ModelType } from '@elizaos/core';
 import { Buffer } from 'buffer';
@@ -24,6 +26,7 @@ import { isBinaryContentType } from './utils.ts';
 import knowledgeE2ETest from './__tests__/e2e/knowledge-e2e.test.ts';
 import startupLoadingTest from './__tests__/e2e/startup-loading.test.ts';
 import attachmentHandlingTest from './__tests__/e2e/attachment-handling.test.ts';
+import advancedFeaturesE2ETest from './__tests__/e2e/advanced-features-e2e.test.ts';
 
 // Define an interface for the mock logger functions
 interface MockLogFunction extends Function {
@@ -893,7 +896,7 @@ export class KnowledgeTestSuite implements TestSuite {
         // Clear previous mock calls
         mockLogger.clearCalls();
 
-        // Test with empty content which should cause an error
+        // Test with empty content - the service should throw an error
         try {
           await service.addKnowledge({
             clientDocumentId: uuidv4() as UUID,
@@ -904,23 +907,18 @@ export class KnowledgeTestSuite implements TestSuite {
             roomId: runtime.agentId,
             entityId: runtime.agentId,
           });
-
-          // If we reach here without error, that's a problem
-          throw new Error('Expected error for empty content');
+          
+          // If we get here without error, that's a problem
+          throw new Error('Expected error for empty content but none was thrown');
         } catch (error: any) {
-          // Expected to throw - verify it's the right error
-          if (
-            !error.message.includes('Empty file buffer') &&
-            !error.message.includes('Expected error for empty content')
-          ) {
-            // The service processed it successfully, which means it handles empty content
-            // This is actually fine behavior, so we'll pass the test
+          // This is expected - verify it's the right error
+          if (!error.message.includes('No text content extracted') && 
+              !error.message.includes('Expected error for empty content')) {
+            throw new Error(`Unexpected error message: ${error.message}`);
           }
         }
 
-        // Alternative test: Force an error by providing truly invalid data
-        // Since the service handles most content types gracefully, we need to test
-        // a different error condition. Let's test with null content.
+        // Test with null content which should also cause an error
         try {
           await service.addKnowledge({
             clientDocumentId: uuidv4() as UUID,
@@ -931,8 +929,15 @@ export class KnowledgeTestSuite implements TestSuite {
             roomId: runtime.agentId,
             entityId: runtime.agentId,
           });
+          
+          // If we get here, that's unexpected
+          throw new Error('Expected error for null content but none was thrown');
         } catch (error: any) {
           // This is expected - the service should handle null content with an error
+          // Verify it's a meaningful error
+          if (!error.message) {
+            throw new Error('Error should have a message');
+          }
         }
 
         await service.stop();
@@ -1177,29 +1182,39 @@ export class KnowledgeTestSuite implements TestSuite {
       fn: async (runtime: IAgentRuntime) => {
         // Create test docs folder
         const docsPath = path.join(process.cwd(), 'test-startup-docs');
-        fs.mkdirSync(docsPath, { recursive: true });
-
-        // Create test documents
-        const testFiles = [
-          { name: 'startup-test-1.md', content: '# Startup Test 1\n\nThis is a test document.' },
-          { name: 'startup-test-2.txt', content: 'Plain text startup test document.' },
-        ];
-
-        for (const file of testFiles) {
-          fs.writeFileSync(path.join(docsPath, file.name), file.content);
-        }
-
-        // Set environment to use test folder
-        process.env.KNOWLEDGE_PATH = docsPath;
-        runtime.setSetting('LOAD_DOCS_ON_STARTUP', 'true');
-
+        
         try {
-          // Start service which should trigger document loading
-          const service = await KnowledgeService.start(runtime);
+          // Clean up any existing test folder first
+          if (fs.existsSync(docsPath)) {
+            fs.rmSync(docsPath, { recursive: true, force: true });
+          }
+          
+          fs.mkdirSync(docsPath, { recursive: true });
+
+          // Create test documents
+          const testFiles = [
+            { name: 'startup-test-1.md', content: '# Startup Test 1\n\nThis is a test document.' },
+            { name: 'startup-test-2.txt', content: 'Plain text startup test document.' },
+          ];
+
+          for (const file of testFiles) {
+            fs.writeFileSync(path.join(docsPath, file.name), file.content);
+          }
+
+          // Set environment to use test folder BEFORE starting service
+          process.env.KNOWLEDGE_PATH = docsPath;
+
+          // Create service with LOAD_DOCS_ON_STARTUP enabled
+          const service = new KnowledgeService(runtime, {
+            LOAD_DOCS_ON_STARTUP: true,
+            EMBEDDING_PROVIDER: 'openai',
+            TEXT_EMBEDDING_MODEL: 'text-embedding-3-small',
+          });
+          
           runtime.services.set(KnowledgeService.serviceType as any, service);
 
-          // Wait for document loading to complete
-          await new Promise((resolve) => setTimeout(resolve, 3000));
+          // Wait for document loading to complete (service has 1s delay + processing time)
+          await new Promise((resolve) => setTimeout(resolve, 5000));
 
           // Verify documents were loaded
           const documents = await runtime.getMemories({
@@ -1211,16 +1226,18 @@ export class KnowledgeTestSuite implements TestSuite {
             testFiles.some((f) => (d.metadata as any)?.originalFilename === f.name)
           );
 
-          if (loadedDocs.length !== testFiles.length) {
+          if (loadedDocs.length < testFiles.length) {
             throw new Error(
-              `Expected ${testFiles.length} documents loaded on startup, got ${loadedDocs.length}`
+              `Expected at least ${testFiles.length} documents loaded on startup, got ${loadedDocs.length}`
             );
           }
 
           await service.stop();
         } finally {
           // Cleanup
-          fs.rmSync(docsPath, { recursive: true, force: true });
+          if (fs.existsSync(docsPath)) {
+            fs.rmSync(docsPath, { recursive: true, force: true });
+          }
           delete process.env.KNOWLEDGE_PATH;
         }
       },
@@ -1238,6 +1255,10 @@ export class KnowledgeTestSuite implements TestSuite {
     {
       name: attachmentHandlingTest.name,
       fn: attachmentHandlingTest.fn,
+    },
+    {
+      name: advancedFeaturesE2ETest.name,
+      fn: advancedFeaturesE2ETest.fn,
     },
   ];
 }

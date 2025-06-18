@@ -277,6 +277,10 @@ export interface KnowledgeConfig {
   TEXT_PROVIDER?: string;
   TEXT_EMBEDDING_MODEL?: string;
   // Add any other plugin-specific configurations
+  SEARCH_MATCH_THRESHOLD?: number;
+  SEARCH_RESULT_COUNT?: number;
+  ENABLE_VERSIONING?: boolean;
+  ENABLE_ANALYTICS?: boolean;
 }
 
 export interface LoadResult {
@@ -304,4 +308,106 @@ export interface ExtendedMemoryMetadata extends Record<string, any> {
   position?: number; // For fragments
   originalFilename?: string;
   url?: string; // For web content
+}
+
+// Advanced search options
+export interface KnowledgeSearchOptions {
+  query: string;
+  filters?: {
+    contentType?: string[];
+    dateRange?: {
+      start?: Date;
+      end?: Date;
+    };
+    tags?: string[];
+    source?: string[];
+    minSimilarity?: number;
+  };
+  sort?: {
+    field: 'similarity' | 'createdAt' | 'updatedAt' | 'title';
+    order: 'asc' | 'desc';
+  };
+  limit?: number;
+  offset?: number;
+  includeMetadata?: boolean;
+  includeFragments?: boolean;
+}
+
+// Batch operation types
+export interface BatchKnowledgeOperation {
+  operation: 'add' | 'update' | 'delete';
+  items: Array<{
+    id?: string;
+    data?: AddKnowledgeOptions;
+    metadata?: Record<string, any>;
+  }>;
+}
+
+export interface BatchOperationResult {
+  successful: number;
+  failed: number;
+  results: Array<{
+    id: string;
+    success: boolean;
+    error?: string;
+    result?: any;
+  }>;
+}
+
+// Knowledge analytics types
+export interface KnowledgeAnalytics {
+  totalDocuments: number;
+  totalFragments: number;
+  storageSize: number;
+  contentTypes: Record<string, number>;
+  queryStats: {
+    totalQueries: number;
+    averageResponseTime: number;
+    topQueries: Array<{ query: string; count: number }>;
+  };
+  usageByDate: Array<{
+    date: string;
+    queries: number;
+    documents: number;
+  }>;
+}
+
+// Knowledge versioning types
+export interface KnowledgeVersion {
+  id: UUID;
+  documentId: UUID;
+  version: number;
+  content: string;
+  metadata: Record<string, any>;
+  createdAt: Date;
+  createdBy: UUID;
+  changeDescription?: string;
+}
+
+// Export/Import types
+export interface KnowledgeExportOptions {
+  format: 'json' | 'csv' | 'markdown';
+  includeMetadata?: boolean;
+  includeFragments?: boolean;
+  documentIds?: UUID[];
+  dateRange?: {
+    start?: Date;
+    end?: Date;
+  };
+}
+
+export interface KnowledgeImportOptions {
+  format: 'json' | 'csv' | 'markdown';
+  overwriteExisting?: boolean;
+  validateBeforeImport?: boolean;
+  batchSize?: number;
+}
+
+// Knowledge relationship types
+export interface KnowledgeRelationship {
+  sourceId: UUID;
+  targetId: UUID;
+  type: 'references' | 'related_to' | 'derived_from' | 'contradicts' | 'supports';
+  strength: number;
+  metadata?: Record<string, any>;
 }

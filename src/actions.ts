@@ -287,7 +287,14 @@ export const processKnowledgeAction: Action = {
         await callback(response);
       }
       
-      return {};
+      return {
+        data: {
+          processedCount: results.length,
+          successCount: results.filter(r => r.success).length,
+          results,
+        },
+        text: response.text,
+      };
     } catch (error) {
       logger.error('Error in PROCESS_KNOWLEDGE action:', error);
 
@@ -299,7 +306,10 @@ export const processKnowledgeAction: Action = {
         await callback(errorResponse);
       }
       
-      return {};
+      return {
+        data: { error: error instanceof Error ? error.message : String(error) },
+        text: errorResponse.text,
+      };
     }
   },
 };
@@ -423,7 +433,14 @@ export const searchKnowledgeAction: Action = {
         await callback(response);
       }
       
-      return {};
+      return {
+        data: {
+          query,
+          results,
+          count: results.length,
+        },
+        text: response.text,
+      };
     } catch (error) {
       logger.error('Error in SEARCH_KNOWLEDGE action:', error);
 
@@ -435,10 +452,345 @@ export const searchKnowledgeAction: Action = {
         await callback(errorResponse);
       }
       
-      return {};
+      return {
+        data: { error: error instanceof Error ? error.message : String(error) },
+        text: errorResponse.text,
+      };
     }
   },
 };
 
-// Export all actions
-export const knowledgeActions = [processKnowledgeAction, searchKnowledgeAction];
+/**
+ * Action to perform advanced search with filters
+ */
+export const advancedSearchAction: Action = {
+  name: 'ADVANCED_KNOWLEDGE_SEARCH',
+  description: 'Perform advanced search with filters, sorting, and pagination',
+  
+  similes: [
+    'advanced search',
+    'filter knowledge',
+    'search with filters',
+    'find documents by type',
+    'search by date',
+  ],
+  
+  examples: [
+    [
+      {
+        name: 'user',
+        content: {
+          text: 'Search for PDF documents about AI from last week',
+        },
+      },
+      {
+        name: 'assistant',
+        content: {
+          text: "I'll search for PDF documents about AI from last week.",
+          actions: ['ADVANCED_KNOWLEDGE_SEARCH'],
+        },
+      },
+    ],
+  ],
+  
+  validate: async (runtime: IAgentRuntime, message: Memory) => {
+    const text = message.content.text?.toLowerCase() || '';
+    const hasAdvancedKeywords = ['filter', 'type', 'date', 'sort', 'pdf', 'recent'].some(k => text.includes(k));
+    const hasSearchKeywords = ['search', 'find', 'look'].some(k => text.includes(k));
+    
+    const service = runtime.getService(KnowledgeService.serviceType);
+    return !!(service && hasSearchKeywords && hasAdvancedKeywords);
+  },
+  
+  handler: async (
+    runtime: IAgentRuntime,
+    message: Memory,
+    state?: State,
+    options?: { [key: string]: unknown },
+    callback?: HandlerCallback
+  ): Promise<ActionResult> => {
+    try {
+      const service = runtime.getService<KnowledgeService>(KnowledgeService.serviceType);
+      if (!service) {
+        throw new Error('Knowledge service not available');
+      }
+      
+      const text = message.content.text || '';
+      
+      // Extract search parameters from natural language
+      const searchOptions: any = {
+        query: text.replace(/search|find|filter|by|type|date|sort/gi, '').trim(),
+        filters: {},
+        limit: 10,
+      };
+      
+      // Detect content type filters
+      if (text.includes('pdf')) searchOptions.filters.contentType = ['application/pdf'];
+      if (text.includes('text')) searchOptions.filters.contentType = ['text/plain'];
+      if (text.includes('markdown')) searchOptions.filters.contentType = ['text/markdown'];
+      
+      // Detect date filters
+      if (text.includes('today')) {
+        const today = new Date();
+        today.setHours(0, 0, 0, 0);
+        searchOptions.filters.dateRange = { start: today };
+      } else if (text.includes('week')) {
+        const weekAgo = new Date();
+        weekAgo.setDate(weekAgo.getDate() - 7);
+        searchOptions.filters.dateRange = { start: weekAgo };
+      }
+      
+      // Detect sorting
+      if (text.includes('recent') || text.includes('newest')) {
+        searchOptions.sort = { field: 'createdAt', order: 'desc' };
+      } else if (text.includes('relevant')) {
+        searchOptions.sort = { field: 'similarity', order: 'desc' };
+      }
+      
+      const results = await service.advancedSearch(searchOptions);
+      
+      let response: Content;
+      if (results.results.length === 0) {
+        response = {
+          text: 'No documents found matching your criteria.',
+        };
+      } else {
+        const formattedResults = results.results
+          .slice(0, 5)
+          .map((item, index) => {
+            const metadata = item.metadata as any;
+            return `${index + 1}. ${metadata?.originalFilename || 'Document'} (${metadata?.contentType || 'unknown'}):\n   ${item.content.text?.substring(0, 200)}...`;
+          })
+          .join('\n\n');
+          
+        response = {
+          text: `Found ${results.totalCount} documents. Here are the top results:\n\n${formattedResults}`,
+        };
+      }
+      
+      if (callback) {
+        await callback(response);
+      }
+      
+      return {
+        data: results,
+        text: response.text,
+      };
+    } catch (error) {
+      logger.error('Error in ADVANCED_KNOWLEDGE_SEARCH:', error);
+      const errorResponse: Content = {
+        text: `Error performing advanced search: ${error instanceof Error ? error.message : 'Unknown error'}`,
+      };
+      if (callback) {
+        await callback(errorResponse);
+      }
+      return { data: { error: String(error) }, text: errorResponse.text };
+    }
+  },
+};
+
+/**
+ * Action to get knowledge analytics
+ */
+export const knowledgeAnalyticsAction: Action = {
+  name: 'KNOWLEDGE_ANALYTICS',
+  description: 'Get analytics and insights about the knowledge base',
+  
+  similes: [
+    'knowledge stats',
+    'analytics',
+    'knowledge insights',
+    'usage statistics',
+    'knowledge metrics',
+  ],
+  
+  examples: [
+    [
+      {
+        name: 'user',
+        content: {
+          text: 'Show me knowledge base analytics',
+        },
+      },
+      {
+        name: 'assistant',
+        content: {
+          text: "I'll generate analytics for the knowledge base.",
+          actions: ['KNOWLEDGE_ANALYTICS'],
+        },
+      },
+    ],
+  ],
+  
+  validate: async (runtime: IAgentRuntime, message: Memory) => {
+    const text = message.content.text?.toLowerCase() || '';
+    const hasKeywords = ['analytics', 'stats', 'statistics', 'metrics', 'insights', 'usage'].some(k => text.includes(k));
+    const hasKnowledgeWord = text.includes('knowledge');
+    
+    const service = runtime.getService(KnowledgeService.serviceType);
+    return !!(service && (hasKeywords || hasKnowledgeWord));
+  },
+  
+  handler: async (
+    runtime: IAgentRuntime,
+    message: Memory,
+    state?: State,
+    options?: { [key: string]: unknown },
+    callback?: HandlerCallback
+  ): Promise<ActionResult> => {
+    try {
+      const service = runtime.getService<KnowledgeService>(KnowledgeService.serviceType);
+      if (!service) {
+        throw new Error('Knowledge service not available');
+      }
+      
+      const analytics = await service.getAnalytics();
+      
+      const response: Content = {
+        text: `📊 Knowledge Base Analytics:
+
+📚 Total Documents: ${analytics.totalDocuments}
+📄 Total Fragments: ${analytics.totalFragments}
+💾 Storage Size: ${(analytics.storageSize / 1024 / 1024).toFixed(2)} MB
+
+📁 Content Types:
+${Object.entries(analytics.contentTypes)
+  .map(([type, count]) => `  • ${type}: ${count} documents`)
+  .join('\n')}
+
+${analytics.queryStats.totalQueries > 0 ? `
+🔍 Query Statistics:
+  • Total Queries: ${analytics.queryStats.totalQueries}
+  • Avg Response Time: ${analytics.queryStats.averageResponseTime.toFixed(2)}ms
+` : ''}`,
+      };
+      
+      if (callback) {
+        await callback(response);
+      }
+      
+      return {
+        data: analytics,
+        text: response.text,
+      };
+    } catch (error) {
+      logger.error('Error in KNOWLEDGE_ANALYTICS:', error);
+      const errorResponse: Content = {
+        text: `Error generating analytics: ${error instanceof Error ? error.message : 'Unknown error'}`,
+      };
+      if (callback) {
+        await callback(errorResponse);
+      }
+      return { data: { error: String(error) }, text: errorResponse.text };
+    }
+  },
+};
+
+/**
+ * Action to export knowledge base
+ */
+export const exportKnowledgeAction: Action = {
+  name: 'EXPORT_KNOWLEDGE',
+  description: 'Export knowledge base to various formats',
+  
+  similes: [
+    'export knowledge',
+    'download knowledge',
+    'backup knowledge',
+    'save knowledge to file',
+  ],
+  
+  examples: [
+    [
+      {
+        name: 'user',
+        content: {
+          text: 'Export my knowledge base as JSON',
+        },
+      },
+      {
+        name: 'assistant',
+        content: {
+          text: "I'll export your knowledge base as JSON.",
+          actions: ['EXPORT_KNOWLEDGE'],
+        },
+      },
+    ],
+  ],
+  
+  validate: async (runtime: IAgentRuntime, message: Memory) => {
+    const text = message.content.text?.toLowerCase() || '';
+    const hasExportKeywords = ['export', 'download', 'backup', 'save'].some(k => text.includes(k));
+    const hasKnowledgeWord = text.includes('knowledge');
+    
+    const service = runtime.getService(KnowledgeService.serviceType);
+    return !!(service && hasExportKeywords && hasKnowledgeWord);
+  },
+  
+  handler: async (
+    runtime: IAgentRuntime,
+    message: Memory,
+    state?: State,
+    options?: { [key: string]: unknown },
+    callback?: HandlerCallback
+  ): Promise<ActionResult> => {
+    try {
+      const service = runtime.getService<KnowledgeService>(KnowledgeService.serviceType);
+      if (!service) {
+        throw new Error('Knowledge service not available');
+      }
+      
+      const text = message.content.text || '';
+      
+      // Detect format
+      let format: 'json' | 'csv' | 'markdown' = 'json';
+      if (text.includes('csv')) format = 'csv';
+      else if (text.includes('markdown') || text.includes('md')) format = 'markdown';
+      
+      const exportData = await service.exportKnowledge({
+        format,
+        includeMetadata: true,
+        includeFragments: false,
+      });
+      
+      // In a real implementation, this would save to a file or return a download link
+      // For now, we'll just return a preview
+      const preview = exportData.substring(0, 500) + (exportData.length > 500 ? '...' : '');
+      
+      const response: Content = {
+        text: `✅ Knowledge base exported as ${format.toUpperCase()}. Size: ${(exportData.length / 1024).toFixed(2)} KB\n\nPreview:\n\`\`\`${format}\n${preview}\n\`\`\``,
+      };
+      
+      if (callback) {
+        await callback(response);
+      }
+      
+      return {
+        data: {
+          format,
+          size: exportData.length,
+          content: exportData,
+        },
+        text: response.text,
+      };
+    } catch (error) {
+      logger.error('Error in EXPORT_KNOWLEDGE:', error);
+      const errorResponse: Content = {
+        text: `Error exporting knowledge: ${error instanceof Error ? error.message : 'Unknown error'}`,
+      };
+      if (callback) {
+        await callback(errorResponse);
+      }
+      return { data: { error: String(error) }, text: errorResponse.text };
+    }
+  },
+};
+
+// Update the export to include new actions
+export const knowledgeActions = [
+  processKnowledgeAction, 
+  searchKnowledgeAction,
+  advancedSearchAction,
+  knowledgeAnalyticsAction,
+  exportKnowledgeAction,
+];

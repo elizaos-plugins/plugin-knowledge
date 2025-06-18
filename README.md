@@ -219,3 +219,196 @@ await knowledgeService.deleteMemory(documentId);
 ## 📝 License
 
 See the ElizaOS license for details.
+
+### Advanced Features
+
+The knowledge plugin now includes several advanced features for enterprise-grade knowledge management:
+
+#### 🔍 Advanced Search
+
+Search with filters, sorting, and pagination:
+
+```typescript
+const results = await knowledgeService.advancedSearch({
+  query: 'machine learning',
+  filters: {
+    contentType: ['application/pdf', 'text/markdown'],
+    tags: ['ai', 'research'],
+    dateRange: {
+      start: new Date('2024-01-01'),
+      end: new Date('2024-12-31'),
+    },
+    minSimilarity: 0.7,
+  },
+  sort: {
+    field: 'similarity', // or 'createdAt', 'updatedAt', 'title'
+    order: 'desc',
+  },
+  limit: 20,
+  offset: 0,
+  includeMetadata: true,
+});
+```
+
+Natural language search examples:
+- "Search for pdf documents about AI from last week"
+- "Find recent markdown files sorted by relevant"
+- "Look for documents with blockchain tags from today"
+
+#### 📦 Batch Operations
+
+Process multiple documents efficiently:
+
+```typescript
+const result = await knowledgeService.batchOperation({
+  operation: 'add', // or 'update', 'delete'
+  items: [
+    { data: { content: 'Doc 1', contentType: 'text/plain', ... } },
+    { data: { content: 'Doc 2', contentType: 'text/plain', ... } },
+    // ... more items
+  ],
+});
+
+console.log(`Processed: ${result.successful} successful, ${result.failed} failed`);
+```
+
+#### 📊 Analytics & Insights
+
+Get comprehensive analytics about your knowledge base:
+
+```typescript
+const analytics = await knowledgeService.getAnalytics();
+
+// Returns:
+// {
+//   totalDocuments: 150,
+//   totalFragments: 450,
+//   storageSize: 5242880, // bytes
+//   contentTypes: {
+//     'application/pdf': 80,
+//     'text/plain': 50,
+//     'text/markdown': 20,
+//   },
+//   queryStats: {
+//     totalQueries: 1000,
+//     averageResponseTime: 250, // ms
+//     topQueries: [
+//       { query: 'AI research', count: 50 },
+//       { query: 'blockchain', count: 30 },
+//     ],
+//   },
+//   usageByDate: [...],
+// }
+```
+
+#### 📤 Export & Import
+
+Export your knowledge base in multiple formats:
+
+```typescript
+// Export to JSON
+const jsonExport = await knowledgeService.exportKnowledge({
+  format: 'json',
+  includeMetadata: true,
+  documentIds: ['id1', 'id2'], // optional filter
+  dateRange: { start: new Date('2024-01-01') }, // optional filter
+});
+
+// Export to CSV
+const csvExport = await knowledgeService.exportKnowledge({
+  format: 'csv',
+});
+
+// Export to Markdown
+const markdownExport = await knowledgeService.exportKnowledge({
+  format: 'markdown',
+  includeMetadata: false,
+});
+```
+
+Import knowledge from various formats:
+
+```typescript
+// Import from JSON
+const importResult = await knowledgeService.importKnowledge(jsonData, {
+  format: 'json',
+  validateBeforeImport: true,
+  overwriteExisting: false,
+});
+
+// Import from CSV
+const csvResult = await knowledgeService.importKnowledge(csvData, {
+  format: 'csv',
+  batchSize: 100,
+});
+```
+
+#### 🎯 Action Chaining
+
+The SEARCH_KNOWLEDGE action now returns structured data that can be used by other actions:
+
+```typescript
+// SEARCH_KNOWLEDGE returns:
+{
+  data: {
+    query: 'machine learning',
+    results: [...], // KnowledgeItem[]
+    count: 5,
+  },
+  text: 'Found 5 results...',
+}
+
+// This data can be consumed by other actions like:
+// - ANALYZE_KNOWLEDGE: Analyze search results
+// - SUMMARIZE_KNOWLEDGE: Create summaries
+// - FILTER_KNOWLEDGE: Further filter results
+```
+
+#### ⚙️ Configuration Options
+
+New configuration options for advanced features:
+
+```env
+# Search Configuration
+SEARCH_MATCH_THRESHOLD=0.7      # Minimum similarity score (0-1)
+SEARCH_RESULT_COUNT=20          # Default number of results
+
+# Feature Flags
+ENABLE_VERSIONING=true          # Track document versions
+ENABLE_ANALYTICS=true           # Enable analytics tracking
+
+# Performance
+BATCH_PROCESSING_SIZE=5         # Items processed in parallel
+```
+
+### Available Actions
+
+The plugin provides these enhanced actions:
+
+1. **PROCESS_KNOWLEDGE** - Add documents, text, URLs, or attachments
+2. **SEARCH_KNOWLEDGE** - Basic knowledge search with action chaining support
+3. **ADVANCED_KNOWLEDGE_SEARCH** - Advanced search with filters and sorting
+4. **KNOWLEDGE_ANALYTICS** - Get analytics and insights
+5. **EXPORT_KNOWLEDGE** - Export knowledge base to various formats
+
+</details>
+
+## 🧪 Testing
+
+The plugin includes comprehensive test coverage:
+
+```bash
+# Run all tests
+npm test
+
+# Run unit tests
+npm run test:unit
+
+# Run E2E tests (including advanced features)
+npm test
+
+# Run Cypress UI tests
+npm run test:cypress:open
+```
+
+## 🤝 Contributing

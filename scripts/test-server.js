@@ -9,6 +9,13 @@ const PORT = process.env.PORT || 3000;
 const server = createServer((req, res) => {
   console.log(`Request: ${req.method} ${req.url}`);
 
+  // Handle root path for health check
+  if (req.url === '/') {
+    res.writeHead(200, { 'Content-Type': 'text/plain' });
+    res.end('OK');
+    return;
+  }
+
   // Handle test components page
   if (req.url === '/test-components') {
     const testPagePath = join(__dirname, '..', 'src', 'frontend', 'test-components.html');
@@ -83,6 +90,20 @@ const server = createServer((req, res) => {
       res.writeHead(404);
       res.end('CSS not found');
     }
+    return;
+  }
+
+  // Handle Tailwind CSS CDN request
+  if (req.url === '/tailwindcss') {
+    res.writeHead(200, { 'Content-Type': 'text/css' });
+    res.end('/* Tailwind CSS mock for testing */');
+    return;
+  }
+
+  // Handle JavaScript files
+  if (req.url.endsWith('.js')) {
+    res.writeHead(200, { 'Content-Type': 'application/javascript' });
+    res.end('// Mock JavaScript for testing');
     return;
   }
 

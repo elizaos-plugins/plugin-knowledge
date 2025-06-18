@@ -966,6 +966,132 @@ async function bulkDeleteKnowledgeHandler(req: any, res: any, runtime: IAgentRun
   }
 }
 
+// Add advanced search route
+async function advancedSearchHandler(req: any, res: any, runtime: IAgentRuntime) {
+  try {
+    const { agentId } = req.params;
+    if (!runtime || runtime.agentId !== agentId) {
+      return res.status(404).json({ error: 'Agent not found' });
+    }
+
+    const service = runtime.getService<KnowledgeService>('knowledge');
+    if (!service) {
+      return res.status(404).json({ error: 'Knowledge service not available' });
+    }
+
+    const searchOptions = req.body;
+    const results = await service.advancedSearch(searchOptions);
+
+    res.json(results);
+  } catch (error: any) {
+    logger.error('Error in advanced search:', error);
+    res.status(500).json({ error: error.message || 'Failed to perform advanced search' });
+  }
+}
+
+// Add analytics route
+async function getAnalyticsHandler(req: any, res: any, runtime: IAgentRuntime) {
+  try {
+    const { agentId } = req.params;
+    if (!runtime || runtime.agentId !== agentId) {
+      return res.status(404).json({ error: 'Agent not found' });
+    }
+
+    const service = runtime.getService<KnowledgeService>('knowledge');
+    if (!service) {
+      return res.status(404).json({ error: 'Knowledge service not available' });
+    }
+
+    const analytics = await service.getAnalytics();
+    res.json(analytics);
+  } catch (error: any) {
+    logger.error('Error getting analytics:', error);
+    res.status(500).json({ error: error.message || 'Failed to get analytics' });
+  }
+}
+
+// Add batch operations route
+async function batchOperationHandler(req: any, res: any, runtime: IAgentRuntime) {
+  try {
+    const { agentId } = req.params;
+    if (!runtime || runtime.agentId !== agentId) {
+      return res.status(404).json({ error: 'Agent not found' });
+    }
+
+    const service = runtime.getService<KnowledgeService>('knowledge');
+    if (!service) {
+      return res.status(404).json({ error: 'Knowledge service not available' });
+    }
+
+    const batchOperation = req.body;
+    const result = await service.batchOperation(batchOperation);
+
+    res.json(result);
+  } catch (error: any) {
+    logger.error('Error in batch operation:', error);
+    res.status(500).json({ error: error.message || 'Batch operation failed' });
+  }
+}
+
+// Add export route
+async function exportKnowledgeHandler(req: any, res: any, runtime: IAgentRuntime) {
+  try {
+    const { agentId } = req.params;
+    if (!runtime || runtime.agentId !== agentId) {
+      return res.status(404).json({ error: 'Agent not found' });
+    }
+
+    const service = runtime.getService<KnowledgeService>('knowledge');
+    if (!service) {
+      return res.status(404).json({ error: 'Knowledge service not available' });
+    }
+
+    const exportOptions = req.body;
+    const exportData = await service.exportKnowledge(exportOptions);
+
+    // Set appropriate content type based on format
+    const format = exportOptions.format || 'json';
+    const contentTypes: Record<string, string> = {
+      json: 'application/json',
+      csv: 'text/csv',
+      markdown: 'text/markdown',
+    };
+
+    res.setHeader('Content-Type', contentTypes[format] || 'text/plain');
+    res.setHeader('Content-Disposition', `attachment; filename="knowledge-export.${format}"`);
+    res.send(exportData);
+  } catch (error: any) {
+    logger.error('Error exporting knowledge:', error);
+    res.status(500).json({ error: error.message || 'Export failed' });
+  }
+}
+
+// Add import route
+async function importKnowledgeHandler(req: any, res: any, runtime: IAgentRuntime) {
+  try {
+    const { agentId } = req.params;
+    if (!runtime || runtime.agentId !== agentId) {
+      return res.status(404).json({ error: 'Agent not found' });
+    }
+
+    const service = runtime.getService<KnowledgeService>('knowledge');
+    if (!service) {
+      return res.status(404).json({ error: 'Knowledge service not available' });
+    }
+
+    const { data, options } = req.body;
+    if (!data || !options || !options.format) {
+      return res.status(400).json({ error: 'Missing data or import options' });
+    }
+
+    const result = await service.importKnowledge(data, options);
+    res.json(result);
+  } catch (error: any) {
+    logger.error('Error importing knowledge:', error);
+    res.status(500).json({ error: error.message || 'Import failed' });
+  }
+}
+
 export const knowledgeRoutes: Route[] = [
   {
     type: 'GET',
@@ -1034,5 +1160,30 @@ export const knowledgeRoutes: Route[] = [
         sendError(res, 404, 'NOT_FOUND', 'Test components page not found');
       }
     },
+  },
+  {
+    type: 'POST',
+    path: '/api/agents/:agentId/plugins/knowledge/search/advanced',
+    handler: advancedSearchHandler,
+  },
+  {
+    type: 'GET',
+    path: '/api/agents/:agentId/plugins/knowledge/analytics',
+    handler: getAnalyticsHandler,
+  },
+  {
+    type: 'POST',
+    path: '/api/agents/:agentId/plugins/knowledge/batch',
+    handler: batchOperationHandler,
+  },
+  {
+    type: 'POST',
+    path: '/api/agents/:agentId/plugins/knowledge/export',
+    handler: exportKnowledgeHandler,
+  },
+  {
+    type: 'POST',
+    path: '/api/agents/:agentId/plugins/knowledge/import',
+    handler: importKnowledgeHandler,
   },
 ];

@@ -1,7 +1,7 @@
 import { describe, it, expect, beforeEach, vi, Mock } from 'vitest';
-import { processKnowledgeAction } from '../../actions';
+import { processKnowledgeAction, searchKnowledgeAction } from '../../actions';
 import { KnowledgeService } from '../../service';
-import type { IAgentRuntime, Memory, Content, State, UUID } from '@elizaos/core';
+import type { IAgentRuntime, Memory, Content, State, UUID, ActionResult } from '@elizaos/core';
 import * as fs from 'fs';
 import * as path from 'path';
 
@@ -87,7 +87,7 @@ describe('processKnowledgeAction', () => {
       (path.extname as Mock).mockReturnValue('.pdf');
       (mockKnowledgeService.addKnowledge as Mock).mockResolvedValue({ fragmentCount: 5 });
 
-      await processKnowledgeAction.handler?.(mockRuntime, message, mockState, {}, mockCallback);
+      const result = await processKnowledgeAction.handler?.(mockRuntime, message, mockState, {}, mockCallback) as ActionResult;
 
       expect(fs.existsSync).toHaveBeenCalledWith('/path/to/document.pdf');
       expect(fs.readFileSync).toHaveBeenCalledWith('/path/to/document.pdf');
@@ -103,6 +103,10 @@ describe('processKnowledgeAction', () => {
       expect(mockCallback).toHaveBeenCalledWith({
         text: `I've successfully processed the document "document.pdf". It has been split into 5 searchable fragments and added to my knowledge base.`,
       });
+      
+      expect(result).toBeDefined();
+      expect(result?.text).toContain('successfully processed');
+      expect(result?.data?.results).toBeInstanceOf(Array);
 
       // Restore Date.now() after the test
       dateNowSpy.mockRestore();
@@ -120,7 +124,7 @@ describe('processKnowledgeAction', () => {
 
       (fs.existsSync as Mock).mockReturnValue(false);
 
-      await processKnowledgeAction.handler?.(mockRuntime, message, mockState, {}, mockCallback);
+      const result = await processKnowledgeAction.handler?.(mockRuntime, message, mockState, {}, mockCallback) as ActionResult;
 
       expect(fs.existsSync).toHaveBeenCalledWith('/non/existent/file.txt');
       expect(fs.readFileSync).not.toHaveBeenCalled();
@@ -128,6 +132,7 @@ describe('processKnowledgeAction', () => {
       expect(mockCallback).toHaveBeenCalledWith({
         text: "I couldn't find the file at /non/existent/file.txt. Please check the path and try again.",
       });
+      expect(result?.text).toBeUndefined();
     });
 
     it('should process direct text content when no file path is provided', async () => {
@@ -142,7 +147,7 @@ describe('processKnowledgeAction', () => {
 
       (mockKnowledgeService.addKnowledge as Mock).mockResolvedValue({});
 
-      await processKnowledgeAction.handler?.(mockRuntime, message, mockState, {}, mockCallback);
+      const result = await processKnowledgeAction.handler?.(mockRuntime, message, mockState, {}, mockCallback) as ActionResult;
 
       expect(fs.existsSync).not.toHaveBeenCalled();
       expect(mockKnowledgeService.addKnowledge).toHaveBeenCalledWith({
@@ -157,6 +162,8 @@ describe('processKnowledgeAction', () => {
       expect(mockCallback).toHaveBeenCalledWith({
         text: "I've added that information to my knowledge base. It has been stored and indexed for future reference.",
       });
+      expect(result).toBeDefined();
+      expect(result?.text).toContain('added that information');
     });
 
     it('should return a message if no file path and no text content is provided', async () => {
@@ -169,13 +176,14 @@ describe('processKnowledgeAction', () => {
         roomId: generateMockUuid(12),
       };
 
-      await processKnowledgeAction.handler?.(mockRuntime, message, mockState, {}, mockCallback);
+      const result = await processKnowledgeAction.handler?.(mockRuntime, message, mockState, {}, mockCallback) as ActionResult;
 
       expect(fs.existsSync).not.toHaveBeenCalled();
       expect(mockKnowledgeService.addKnowledge).not.toHaveBeenCalled();
       expect(mockCallback).toHaveBeenCalledWith({
         text: 'I need some content to add to my knowledge base. Please provide text or a file path.',
       });
+      expect(result?.text).toBeUndefined();
     });
 
     it('should handle errors gracefully', async () => {
@@ -194,11 +202,14 @@ describe('processKnowledgeAction', () => {
       (path.extname as Mock).mockReturnValue('.txt');
       (mockKnowledgeService.addKnowledge as Mock).mockRejectedValue(new Error('Service error'));
 
-      await processKnowledgeAction.handler?.(mockRuntime, message, mockState, {}, mockCallback);
+      const result = await processKnowledgeAction.handler?.(mockRuntime, message, mockState, {}, mockCallback) as ActionResult;
 
       expect(mockCallback).toHaveBeenCalledWith({
         text: 'I encountered an error while processing the knowledge: Service error',
       });
+      expect(result).toBeDefined();
+      expect(result?.data?.error).toBe('Service error');
+      expect(result?.text).toContain('encountered an error');
     });
 
     it("should generate unique clientDocumentId's for different documents and content", async () => {
@@ -390,6 +401,321 @@ describe('processKnowledgeAction', () => {
         roomId: generateMockUuid(27),
       };
       const isValid = await processKnowledgeAction.validate?.(mockRuntime, message, mockState);
+      expect(isValid).toBe(false);
+    });
+  });
+});
+
+describe('searchKnowledgeAction', () => {
+  let mockRuntime: IAgentRuntime;
+  let mockKnowledgeService: KnowledgeService;
+  let mockCallback: Mock;
+  let mockState: State;
+
+  const generateMockUuid = (suffix: string | number): UUID =>
+    `00000000-0000-0000-0000-${String(suffix).padStart(12, '0')}` as UUID;
+
+  beforeEach(() => {
+    mockKnowledgeService = {
+      addKnowledge: vi.fn(),
+      getKnowledge: vi.fn(),
+      serviceType: 'knowledge-service',
+    } as unknown as KnowledgeService;
+
+    mockRuntime = {
+      agentId: 'test-agent' as UUID,
+      getService: vi.fn().mockReturnValue(mockKnowledgeService),
+    } as unknown as IAgentRuntime;
+
+    mockCallback = vi.fn();
+    mockState = {
+      values: {},
+      data: {},
+      text: '',
+    };
+    vi.clearAllMocks();
+  });
+
+  describe('handler', () => {
+    it('should search knowledge and return ActionResult with data', async () => {
+      const mockResults = [
+        {
+          id: generateMockUuid(50),
+          content: { text: 'First search result about AI' },
+          metadata: { source: 'ai-basics.pdf' },
+        },
+        {
+          id: generateMockUuid(51),
+          content: { text: 'Second search result about machine learning' },
+          metadata: { source: 'ml-guide.pdf' },
+        },
+        {
+          id: generateMockUuid(52),
+          content: { text: 'Third search result about neural networks' },
+          metadata: { source: 'nn-intro.pdf' },
+        },
+      ];
+
+      (mockKnowledgeService.getKnowledge as Mock).mockResolvedValue(mockResults);
+
+      const message: Memory = {
+        id: generateMockUuid(53),
+        content: {
+          text: 'Search your knowledge for information about AI',
+        },
+        entityId: generateMockUuid(54),
+        roomId: generateMockUuid(55),
+      };
+
+      const result = await searchKnowledgeAction.handler?.(
+        mockRuntime,
+        message,
+        mockState,
+        {},
+        mockCallback
+      ) as ActionResult;
+
+      // Verify the search was performed
+      expect(mockKnowledgeService.getKnowledge).toHaveBeenCalledWith({
+        ...message,
+        content: { text: 'information about AI' },
+      });
+
+      // Verify ActionResult structure
+      expect(result).toBeDefined();
+      expect(result.data).toBeDefined();
+      expect(result.data?.query).toBe('information about AI');
+      expect(result.data?.results).toEqual(mockResults);
+      expect(result.data?.count).toBe(3);
+      expect(result.text).toContain("Here's what I found");
+
+      // Verify callback was called
+      expect(mockCallback).toHaveBeenCalledWith({
+        text: expect.stringContaining('information about AI'),
+      });
+    });
+
+    it('should handle empty search results', async () => {
+      (mockKnowledgeService.getKnowledge as Mock).mockResolvedValue([]);
+
+      const message: Memory = {
+        id: generateMockUuid(56),
+        content: {
+          text: 'Search knowledge for quantum teleportation',
+        },
+        entityId: generateMockUuid(57),
+        roomId: generateMockUuid(58),
+      };
+
+      const result = await searchKnowledgeAction.handler?.(
+        mockRuntime,
+        message,
+        mockState,
+        {},
+        mockCallback
+      ) as ActionResult;
+
+      expect(result.data?.query).toBe('quantum teleportation');
+      expect(result.data?.results).toEqual([]);
+      expect(result.data?.count).toBe(0);
+      expect(result.text).toContain("couldn't find any information");
+    });
+
+    it('should handle search errors and return error in ActionResult', async () => {
+      (mockKnowledgeService.getKnowledge as Mock).mockRejectedValue(
+        new Error('Search service unavailable')
+      );
+
+      const message: Memory = {
+        id: generateMockUuid(59),
+        content: {
+          text: 'Search for something',
+        },
+        entityId: generateMockUuid(60),
+        roomId: generateMockUuid(61),
+      };
+
+      const result = await searchKnowledgeAction.handler?.(
+        mockRuntime,
+        message,
+        mockState,
+        {},
+        mockCallback
+      ) as ActionResult;
+
+      expect(result.data?.error).toBe('Search service unavailable');
+      expect(result.text).toContain('encountered an error');
+      expect(mockCallback).toHaveBeenCalledWith({
+        text: expect.stringContaining('Search service unavailable'),
+      });
+    });
+
+    it('should handle case where only search keywords are provided', async () => {
+      // Mock empty results
+      (mockKnowledgeService.getKnowledge as Mock).mockResolvedValue([]);
+      
+      const message: Memory = {
+        id: generateMockUuid(62),
+        content: {
+          text: 'search knowledge',
+        },
+        entityId: generateMockUuid(63),
+        roomId: generateMockUuid(64),
+      };
+
+      const result = await searchKnowledgeAction.handler?.(
+        mockRuntime,
+        message,
+        mockState,
+        {},
+        mockCallback
+      ) as ActionResult;
+
+      // The regex doesn't match "search knowledge", so the whole text becomes the query
+      expect(mockKnowledgeService.getKnowledge).toHaveBeenCalledWith({
+        ...message,
+        content: { text: 'search knowledge' },
+      });
+      expect(result.data?.query).toBe('search knowledge');
+      expect(result.data?.results).toEqual([]);
+      expect(result.data?.count).toBe(0);
+      expect(result.text).toContain("couldn't find any information");
+    });
+
+    it('should return structured data suitable for action chaining', async () => {
+      const complexResults = [
+        {
+          id: generateMockUuid(65),
+          content: { 
+            text: 'Climate change impacts include rising temperatures and sea levels',
+            metadata: { importance: 'high' },
+          },
+          metadata: { 
+            source: 'climate-report-2024.pdf',
+            date: '2024-01-15',
+            tags: ['climate', 'environment', 'global-warming'],
+          },
+        },
+        {
+          id: generateMockUuid(66),
+          content: { 
+            text: 'Renewable energy solutions can mitigate climate effects',
+            metadata: { importance: 'medium' },
+          },
+          metadata: { 
+            source: 'renewable-energy.pdf',
+            date: '2024-02-01',
+            tags: ['renewable', 'solar', 'wind'],
+          },
+        },
+      ];
+
+      (mockKnowledgeService.getKnowledge as Mock).mockResolvedValue(complexResults);
+
+      const message: Memory = {
+        id: generateMockUuid(67),
+        content: {
+          text: 'Search knowledge about climate change solutions',
+        },
+        entityId: generateMockUuid(68),
+        roomId: generateMockUuid(69),
+      };
+
+      const result = await searchKnowledgeAction.handler?.(
+        mockRuntime,
+        message,
+        mockState,
+        {},
+        mockCallback
+      ) as ActionResult;
+
+      // Verify the result contains all necessary data for downstream actions
+      expect(result.data).toMatchObject({
+        query: 'about climate change solutions', // The actual query includes "about"
+        results: complexResults,
+        count: 2,
+      });
+
+      // Verify each result maintains its structure
+      const firstResult = result.data?.results[0];
+      expect(firstResult).toHaveProperty('id');
+      expect(firstResult).toHaveProperty('content.text');
+      expect(firstResult).toHaveProperty('metadata.source');
+      expect(firstResult).toHaveProperty('metadata.tags');
+
+      // This data structure can now be used by other actions
+      // For example, a summarize action could access result.data.results
+      // Or an analyze action could process result.data.results[].metadata.tags
+    });
+  });
+
+  describe('validate', () => {
+    beforeEach(() => {
+      (mockRuntime.getService as Mock).mockReturnValue(mockKnowledgeService);
+    });
+
+    it('should return true when search and knowledge keywords are present', async () => {
+      const message: Memory = {
+        id: generateMockUuid(70),
+        content: {
+          text: 'search your knowledge for information',
+        },
+        entityId: generateMockUuid(71),
+        roomId: generateMockUuid(72),
+      };
+
+      const isValid = await searchKnowledgeAction.validate?.(mockRuntime, message, mockState);
+      expect(isValid).toBe(true);
+    });
+
+    it('should return true for various search phrasings', async () => {
+      const testCases = [
+        'find information in your knowledge',
+        'look up knowledge about AI',  // Changed to include "knowledge"
+        'query knowledge base for data',
+        'what do you know about information systems', // Changed to include both keywords
+      ];
+
+      for (const text of testCases) {
+        const message: Memory = {
+          id: generateMockUuid(73),
+          content: { text },
+          entityId: generateMockUuid(74),
+          roomId: generateMockUuid(75),
+        };
+
+        const isValid = await searchKnowledgeAction.validate?.(mockRuntime, message, mockState);
+        expect(isValid).toBe(true);
+      }
+    });
+
+    it('should return false when service is not available', async () => {
+      (mockRuntime.getService as Mock).mockReturnValue(null);
+
+      const message: Memory = {
+        id: generateMockUuid(76),
+        content: {
+          text: 'search knowledge for AI',
+        },
+        entityId: generateMockUuid(77),
+        roomId: generateMockUuid(78),
+      };
+
+      const isValid = await searchKnowledgeAction.validate?.(mockRuntime, message, mockState);
+      expect(isValid).toBe(false);
+    });
+
+    it('should return false when no search keywords are present', async () => {
+      const message: Memory = {
+        id: generateMockUuid(79),
+        content: {
+          text: 'tell me about the weather',
+        },
+        entityId: generateMockUuid(80),
+        roomId: generateMockUuid(81),
+      };
+
+      const isValid = await searchKnowledgeAction.validate?.(mockRuntime, message, mockState);
       expect(isValid).toBe(false);
     });
   });
