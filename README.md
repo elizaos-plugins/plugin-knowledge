@@ -28,19 +28,19 @@ Want your agent to automatically learn from documents when it starts? Just:
    LOAD_DOCS_ON_STARTUP=true
    ```
 
-2. **Create a `docs` folder in your project root and add your documents:**
+2. **Create a `knowledge` or `docs` folder in your project root and add your documents:**
 
    ```
    your-project/
    ├── .env
-   ├── docs/           <-- Create this folder
+   ├── knowledge/      <-- Create this folder (or docs/)
    │   ├── guide.pdf
    │   ├── manual.txt
    │   └── notes.md
    └── ... other files
    ```
 
-3. **Start your agent** - it will automatically load all documents from the `docs` folder!
+3. **Start your agent** - it will automatically load all documents from the `knowledge` folder (or `docs` if `knowledge` doesn't exist)!
 
 ### Supported File Types
 
@@ -120,7 +120,7 @@ OPENAI_API_KEY=your-api-key
 
 ```env
 # Document Loading
-LOAD_DOCS_ON_STARTUP=true          # Auto-load from docs folder
+LOAD_DOCS_ON_STARTUP=true          # Auto-load from knowledge/docs folder
 KNOWLEDGE_PATH=/custom/path        # Custom document path
 
 # Contextual Enhancement (improves understanding)

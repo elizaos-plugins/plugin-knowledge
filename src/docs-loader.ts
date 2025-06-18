@@ -1,12 +1,12 @@
-import { logger, UUID, createUniqueUuid } from "@elizaos/core";
-import * as fs from "fs";
-import * as path from "path";
-import { KnowledgeService } from "./service.ts";
-import { AddKnowledgeOptions } from "./types.ts";
+import { logger, UUID, createUniqueUuid } from '@elizaos/core';
+import * as fs from 'fs';
+import * as path from 'path';
+import { KnowledgeService } from './service.ts';
+import { AddKnowledgeOptions } from './types.ts';
 import { isBinaryContentType } from './utils.ts';
 
 /**
- * Get the knowledge path from environment or default to ./docs
+ * Get the knowledge path from environment or default to ./knowledge or ./docs
  */
 export function getKnowledgePath(): string {
   const envPath = process.env.KNOWLEDGE_PATH;
@@ -23,17 +23,28 @@ export function getKnowledgePath(): string {
     return resolvedPath;
   }
 
-  // Default to docs folder in current working directory
-  const defaultPath = path.join(process.cwd(), 'docs');
-
-  if (!fs.existsSync(defaultPath)) {
-    logger.info(`Default docs folder does not exist at: ${defaultPath}`);
-    logger.info('To use the knowledge plugin, either:');
-    logger.info('1. Create a "docs" folder in your project root');
-    logger.info('2. Set KNOWLEDGE_PATH environment variable to your documents folder');
+  // Check for knowledge folder first (new default)
+  const knowledgePath = path.join(process.cwd(), 'knowledge');
+  if (fs.existsSync(knowledgePath)) {
+    logger.info(`Using knowledge folder at: ${knowledgePath}`);
+    return knowledgePath;
   }
 
-  return defaultPath;
+  // Fall back to docs folder for backwards compatibility
+  const docsPath = path.join(process.cwd(), 'docs');
+  if (fs.existsSync(docsPath)) {
+    logger.info(`Using docs folder at: ${docsPath}`);
+    return docsPath;
+  }
+
+  // Neither exists, inform user about both options
+  logger.info(`No knowledge or docs folder found in project root`);
+  logger.info('To use the knowledge plugin, either:');
+  logger.info('1. Create a "knowledge" or "docs" folder in your project root');
+  logger.info('2. Set KNOWLEDGE_PATH environment variable to your documents folder');
+
+  // Return docs path as default (for backwards compatibility)
+  return docsPath;
 }
 
 /**
