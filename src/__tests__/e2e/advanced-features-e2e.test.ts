@@ -1,6 +1,7 @@
 import type { TestCase, IAgentRuntime, Memory, UUID } from '@elizaos/core';
 import { v4 as uuidv4 } from 'uuid';
 import { KnowledgeService } from '../../service';
+import type { KnowledgeSearchOptions } from '../../types';
 
 export const advancedFeaturesE2ETest: TestCase = {
   name: 'Advanced Knowledge Features E2E Test',
@@ -20,8 +21,8 @@ export const advancedFeaturesE2ETest: TestCase = {
     const testDocuments = [
       {
         clientDocumentId: uuidv4() as UUID,
-        contentType: 'application/pdf',
-        originalFilename: 'ai-research-2024.pdf',
+        contentType: 'text/plain',
+        originalFilename: 'ai-research-2024.txt',
         worldId: runtime.agentId,
         content: 'This is a comprehensive research paper about artificial intelligence and machine learning techniques published in 2024.',
         roomId: runtime.agentId,

@@ -33,6 +33,14 @@ if (ctxKnowledgeEnabled) {
   logger.info(`Document processor starting with Contextual Knowledge DISABLED`);
 }
 
+// Default provider rate limits
+const DEFAULT_PROVIDER_LIMITS = {
+  maxConcurrentRequests: 30,
+  requestsPerMinute: 60,
+  tokensPerMinute: 150000,
+  provider: 'default',
+};
+
 // =============================================================================
 // MAIN DOCUMENT PROCESSING FUNCTIONS
 // =============================================================================
@@ -83,14 +91,9 @@ export async function processFragmentsSynchronously({
   logger.info(`Split content into ${chunks.length} chunks for document ${documentId}`);
 
   // Use default rate limits
-  const providerLimits = {
-    maxConcurrentRequests: 30,
-    requestsPerMinute: 60,
-    tokensPerMinute: 150000,
-    provider: 'default',
-  };
-  const CONCURRENCY_LIMIT = Math.min(30, providerLimits.maxConcurrentRequests || 30);
-  const rateLimiter = createRateLimiter(providerLimits.requestsPerMinute || 60);
+  const providerLimits = DEFAULT_PROVIDER_LIMITS;
+  const CONCURRENCY_LIMIT = Math.min(30, providerLimits.maxConcurrentRequests);
+  const rateLimiter = createRateLimiter(providerLimits.requestsPerMinute);
 
   // Process and save fragments
   const { savedCount, failedCount } = await processAndSaveFragments({
@@ -492,17 +495,11 @@ async function generateContextsInBatch(
     return [];
   }
 
-  const providerLimits = {
-    maxConcurrentRequests: 30,
-    requestsPerMinute: 60,
-    tokensPerMinute: 150000,
-    provider: 'default',
-  };
-  const rateLimiter = createRateLimiter(providerLimits.requestsPerMinute || 60);
+  const providerLimits = DEFAULT_PROVIDER_LIMITS;
+  const rateLimiter = createRateLimiter(providerLimits.requestsPerMinute);
 
   // Get active provider from validateModelConfig
   const config = validateModelConfig();
-  const isUsingOpenRouter = config.TEXT_PROVIDER === 'openrouter';
   // For now, assume no cache capable model since TEXT_MODEL is not in our simplified config
   const isUsingCacheCapableModel = false;
 

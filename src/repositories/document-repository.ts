@@ -5,7 +5,7 @@ import { documentsTable } from '../schema.ts';
 import { Document } from '../types.ts';
 
 export class DocumentRepository {
-  constructor(private db: PostgresJsDatabase<any>) {}
+  constructor(private readonly db: PostgresJsDatabase<{ documents: typeof documentsTable }>) {}
 
   /**
    * Create a new document

@@ -39,6 +39,10 @@ export function validateModelConfig(runtime?: IAgentRuntime): ValidatedModelConf
     runtime?.getSetting('MAX_OUTPUT_TOKENS') || process.env.MAX_OUTPUT_TOKENS || '4096'
   );
 
+  // Guard against NaN
+  const finalMaxInputTokens = Number.isNaN(maxInputTokens) ? 4000 : maxInputTokens;
+  const finalMaxOutputTokens = Number.isNaN(maxOutputTokens) ? 4096 : maxOutputTokens;
+
   // Get embedding provider configuration
   let embeddingProvider =
     runtime?.getSetting('EMBEDDING_PROVIDER') || process.env.EMBEDDING_PROVIDER || '';
@@ -92,8 +96,8 @@ export function validateModelConfig(runtime?: IAgentRuntime): ValidatedModelConf
   return {
     CTX_KNOWLEDGE_ENABLED: ctxKnowledgeEnabled,
     LOAD_DOCS_ON_STARTUP: loadDocsOnStartup,
-    MAX_INPUT_TOKENS: maxInputTokens,
-    MAX_OUTPUT_TOKENS: maxOutputTokens,
+    MAX_INPUT_TOKENS: finalMaxInputTokens,
+    MAX_OUTPUT_TOKENS: finalMaxOutputTokens,
     EMBEDDING_PROVIDER: embeddingProvider,
     TEXT_PROVIDER: textProvider,
     TEXT_EMBEDDING_MODEL: textEmbeddingModel,

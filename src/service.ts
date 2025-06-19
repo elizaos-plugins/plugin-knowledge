@@ -43,6 +43,7 @@ const logger = createLogger({ agentName: 'KnowledgeService' });
  */
 export class KnowledgeService extends Service {
   static readonly serviceType = 'knowledge';
+  static readonly serviceName = 'knowledge';
   public override config: Metadata;
   private knowledgeConfig: KnowledgeConfig;
   capabilityDescription =
@@ -983,7 +984,7 @@ export class KnowledgeService extends Service {
 
     // Format based on export type
     switch (options.format) {
-      case 'json':
+      case 'json': {
         return JSON.stringify({
           exportDate: new Date().toISOString(),
           agentId: this.runtime.agentId,
@@ -994,8 +995,9 @@ export class KnowledgeService extends Service {
             createdAt: doc.createdAt,
           })),
         }, null, 2);
+      }
 
-      case 'csv':
+      case 'csv': {
         // Simple CSV export
         const headers = ['ID', 'Title', 'Content', 'Type', 'Created'];
         const rows = documents.map(doc => [
@@ -1005,19 +1007,21 @@ export class KnowledgeService extends Service {
           (doc.metadata as any)?.contentType || '',
           new Date(doc.createdAt || 0).toISOString(),
         ]);
-        
-        return [headers, ...rows].map(row => row.join(',')).join('\n');
 
-      case 'markdown':
+        return [headers, ...rows].map(row => row.join(',')).join('\n');
+      }
+
+      case 'markdown': {
         return documents.map(doc => {
           const title = (doc.metadata as any)?.originalFilename || 'Untitled';
           const content = doc.content.text || '';
           const metadata = options.includeMetadata 
             ? `\n\n---\n${JSON.stringify(doc.metadata, null, 2)}\n---`
             : '';
-          
+
           return `# ${title}\n\n${content}${metadata}`;
         }).join('\n\n---\n\n');
+      }
 
       default:
         throw new Error(`Unsupported export format: ${options.format}`);
@@ -1034,7 +1038,7 @@ export class KnowledgeService extends Service {
 
     try {
       switch (options.format) {
-        case 'json':
+        case 'json': {
           const jsonData = JSON.parse(data);
           items = jsonData.documents.map((doc: any) => ({
             clientDocumentId: doc.id || stringToUuid(this.runtime.agentId + Date.now() + Math.random()) as UUID,
@@ -1047,8 +1051,9 @@ export class KnowledgeService extends Service {
             metadata: doc.metadata,
           }));
           break;
+        }
 
-        case 'csv':
+        case 'csv': {
           // Simple CSV parsing (production would use a proper CSV parser)
           const lines = data.split('\n');
           const headers = lines[0].split(',');
@@ -1068,8 +1073,9 @@ export class KnowledgeService extends Service {
             }
           }
           break;
+        }
 
-        case 'markdown':
+        case 'markdown': {
           // Split by document separator
           const docs = data.split('\n\n---\n\n');
           items = docs.map((doc, index) => {
@@ -1088,6 +1094,7 @@ export class KnowledgeService extends Service {
             };
           });
           break;
+        }
 
         default:
           throw new Error(`Unsupported import format: ${options.format}`);

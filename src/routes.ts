@@ -1150,40 +1150,50 @@ export const knowledgeRoutes: Route[] = [
     path: '/test-components',
     handler: async (req: any, res: any, runtime: IAgentRuntime) => {
       const currentDir = path.dirname(new URL(import.meta.url).pathname);
-      const testPagePath = path.join(currentDir, 'frontend', 'test-components.html');
+      // Try multiple locations for the test-components.html file
+      const possiblePaths = [
+        path.join(currentDir, 'frontend', 'test-components.html'),
+        path.join(currentDir, '..', 'src', 'frontend', 'test-components.html'),
+        path.join(currentDir, '..', '..', 'src', 'frontend', 'test-components.html'),
+      ];
 
-      try {
-        const htmlContent = await fs.promises.readFile(testPagePath, 'utf8');
-        res.writeHead(200, { 'Content-Type': 'text/html' });
-        res.end(htmlContent);
-      } catch (error) {
-        sendError(res, 404, 'NOT_FOUND', 'Test components page not found');
+      for (const testPagePath of possiblePaths) {
+        try {
+          const htmlContent = await fs.promises.readFile(testPagePath, 'utf8');
+          res.writeHead(200, { 'Content-Type': 'text/html' });
+          res.end(htmlContent);
+          return;
+        } catch (error) {
+          // Try next path
+        }
       }
+      
+      sendError(res, 404, 'NOT_FOUND', 'Test components page not found');
     },
   },
   {
     type: 'POST',
-    path: '/api/agents/:agentId/plugins/knowledge/search/advanced',
+    path: '/search/advanced',
     handler: advancedSearchHandler,
   },
   {
     type: 'GET',
-    path: '/api/agents/:agentId/plugins/knowledge/analytics',
+    path: '/analytics',
     handler: getAnalyticsHandler,
   },
   {
     type: 'POST',
-    path: '/api/agents/:agentId/plugins/knowledge/batch',
+    path: '/batch',
     handler: batchOperationHandler,
   },
   {
     type: 'POST',
-    path: '/api/agents/:agentId/plugins/knowledge/export',
+    path: '/export',
     handler: exportKnowledgeHandler,
   },
   {
     type: 'POST',
-    path: '/api/agents/:agentId/plugins/knowledge/import',
+    path: '/import',
     handler: importKnowledgeHandler,
   },
 ];

@@ -3,6 +3,9 @@ import * as fs from 'fs';
 import * as path from 'path';
 import { v4 as uuidv4 } from 'uuid';
 import { KnowledgeService } from '../../service';
+import { loadDocsFromPath } from '../../docs-loader';
+
+
 
 const testCase: TestCase = {
   name: 'Knowledge Service Startup Loading',
@@ -60,21 +63,53 @@ The system should handle both markdown and plain text files.`,
     // Test 5: Wait for initial document loading (if enabled)
     const loadDocsOnStartup = runtime.getSetting('LOAD_DOCS_ON_STARTUP') !== 'false';
     if (loadDocsOnStartup) {
-      // Give the service time to load documents
-      await new Promise((resolve) => setTimeout(resolve, 2000));
-      console.log('✓ Waited for startup document loading');
+      // Since the service has already started before this test runs,
+      // the initial document loading has already happened.
+      // We should check if there are any documents that were loaded on startup.
+      console.log('Checking for documents loaded on startup...');
+      
+      const existingDocuments = await runtime.getMemories({
+        tableName: 'documents',
+        agentId: runtime.agentId,
+        count: 100,
+      });
+      
+      console.log(`✓ Found ${existingDocuments.length} documents already loaded on startup`);
     }
 
-    // Test 6: Manually trigger document loading
-    const { loadDocsFromPath } = await import('../../docs-loader');
+    // Test 6: Manually load documents from folder
+    console.log('Loading documents from: /Users/shawwalters/eliza-self/packages/plugin-knowledge/docs');
     const loadResult = await loadDocsFromPath(service, runtime.agentId);
-
-    if (loadResult.successful !== testDocs.length) {
-      throw new Error(
-        `Expected ${testDocs.length} documents to be loaded, but got ${loadResult.successful}`
-      );
+    
+    if (loadResult.failed > 0) {
+      throw new Error(`Failed to load ${loadResult.failed} documents`);
     }
-    console.log(`✓ Loaded ${loadResult.successful} documents`);
+    
+    // Expect at least 2 documents (test-document-1.md and test-document-2.txt)
+    // There might be more documents like ADVANCED_FEATURES.md
+    if (loadResult.successful < 2) {
+      throw new Error(`Expected at least 2 documents to be loaded, but got ${loadResult.successful}`);
+    }
+    
+    console.log(`✓ Loaded ${loadResult.successful} document(s)`);
+    
+    // Verify the test documents were loaded by checking for specific ones
+    const allDocuments = await runtime.getMemories({
+      tableName: 'documents',
+      agentId: runtime.agentId,
+      count: 100,
+    });
+    
+    const testDocuments = allDocuments.filter((doc: Memory) => {
+      const filename = (doc.metadata as any)?.originalFilename;
+      return filename === 'test-document-1.md' || filename === 'test-document-2.txt';
+    });
+    
+    if (testDocuments.length !== 2) {
+      throw new Error(`Expected 2 test documents, but found ${testDocuments.length}`);
+    }
+    
+    console.log('✓ Verified test documents were loaded');
 
     // Test 7: Verify documents in database
     const documents = await service.getMemories({

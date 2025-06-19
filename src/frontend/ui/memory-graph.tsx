@@ -87,9 +87,7 @@ const processGraphData = (memories: Memory[]) => {
 };
 
 export function MemoryGraph({ memories, onNodeClick, selectedMemoryId }: MemoryGraphProps) {
-  const graphRef = useRef<
-    ForceGraphMethods<NodeObject<MemoryNode>, LinkObject<MemoryNode, MemoryLink>> | undefined
-  >(undefined);
+  const graphRef = useRef<ForceGraphMethods<MemoryNode, MemoryLink> | undefined>(undefined);
   const [initialized, setInitialized] = useState(false);
   const [shouldRender, setShouldRender] = useState(true);
   const [graphData, setGraphData] = useState<{ nodes: MemoryNode[]; links: MemoryLink[] }>({
@@ -153,7 +151,7 @@ export function MemoryGraph({ memories, onNodeClick, selectedMemoryId }: MemoryG
 
   // Graph initialization and configuration
   const handleGraphInit = useCallback(
-    (graph: ForceGraphMethods<NodeObject<MemoryNode>, LinkObject<MemoryNode, MemoryLink>>) => {
+    (graph: ForceGraphMethods<MemoryNode, MemoryLink>) => {
       graphRef.current = graph;
 
       // Configure the graph force simulation only if graphRef is defined
