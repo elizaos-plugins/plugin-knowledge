@@ -17,8 +17,6 @@ export function Badge({ children, variant = 'default', className = '' }: BadgePr
   };
 
   return (
-    <span className={`${baseClasses} ${variantClasses[variant]} ${className}`}>
-      {children}
-    </span>
+    <span className={`${baseClasses} ${variantClasses[variant]} ${className}`}>{children}</span>
   );
 }

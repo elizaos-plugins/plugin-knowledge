@@ -10,20 +10,23 @@ import type {
   State,
   TestSuite,
   UUID,
-} from "@elizaos/core";
-import { MemoryType, ModelType } from "@elizaos/core";
-import { Buffer } from "buffer";
-import * as fs from "fs";
-import * as path from "path";
-import { v4 as uuidv4 } from "uuid";
-import {
-  createDocumentMemory,
-  extractTextFromDocument,
-} from "./document-processor.ts";
-import knowledgePlugin from "./index.ts";
-import { knowledgeProvider } from "./provider.ts";
-import { KnowledgeService } from "./service.ts";
-import { isBinaryContentType } from "./utils.ts";
+  MemoryMetadata,
+  TestCase,
+} from '@elizaos/core';
+import { MemoryType, ModelType } from '@elizaos/core';
+import { Buffer } from 'buffer';
+import * as fs from 'fs';
+import * as path from 'path';
+import { v4 as uuidv4 } from 'uuid';
+import { createDocumentMemory, extractTextFromDocument } from './document-processor.ts';
+import knowledgePlugin from './index.ts';
+import { knowledgeProvider } from './provider.ts';
+import { KnowledgeService } from './service.ts';
+import { isBinaryContentType } from './utils.ts';
+import knowledgeE2ETest from './__tests__/e2e/knowledge-e2e.test.ts';
+import startupLoadingTest from './__tests__/e2e/startup-loading.test.ts';
+import attachmentHandlingTest from './__tests__/e2e/attachment-handling.test.ts';
+import advancedFeaturesE2ETest from './__tests__/e2e/advanced-features-e2e.test.ts';
 
 // Define an interface for the mock logger functions
 interface MockLogFunction extends Function {
@@ -97,8 +100,8 @@ function createMockRuntime(overrides?: Partial<IAgentRuntime>): IAgentRuntime {
   return {
     agentId: uuidv4() as UUID,
     character: {
-      name: "Test Agent",
-      bio: ["Test bio"],
+      name: 'Test Agent',
+      bio: ['Test bio'],
       knowledge: [],
     },
     providers: [],
@@ -167,15 +170,9 @@ function createMockRuntime(overrides?: Partial<IAgentRuntime>): IAgentRuntime {
       const results = Array.from(memories.values()).filter((m) => {
         if (params.roomId && m.roomId !== params.roomId) return false;
         if (params.entityId && m.entityId !== params.entityId) return false;
-        if (
-          params.tableName === "knowledge" &&
-          m.metadata?.type !== MemoryType.FRAGMENT
-        )
+        if (params.tableName === 'knowledge' && m.metadata?.type !== MemoryType.FRAGMENT)
           return false;
-        if (
-          params.tableName === "documents" &&
-          m.metadata?.type !== MemoryType.DOCUMENT
-        )
+        if (params.tableName === 'documents' && m.metadata?.type !== MemoryType.DOCUMENT)
           return false;
         return true;
       });
@@ -188,9 +185,7 @@ function createMockRuntime(overrides?: Partial<IAgentRuntime>): IAgentRuntime {
     },
 
     async getMemoriesByRoomIds(params: any) {
-      return Array.from(memories.values()).filter((m) =>
-        params.roomIds.includes(m.roomId)
-      );
+      return Array.from(memories.values()).filter((m) => params.roomIds.includes(m.roomId));
     },
 
     async searchMemories(params: any) {
@@ -235,8 +230,7 @@ function createMockRuntime(overrides?: Partial<IAgentRuntime>): IAgentRuntime {
     },
 
     async countMemories(roomId: UUID) {
-      return Array.from(memories.values()).filter((m) => m.roomId === roomId)
-        .length;
+      return Array.from(memories.values()).filter((m) => m.roomId === roomId).length;
     },
 
     // Other required methods with minimal implementation
@@ -350,7 +344,7 @@ function createMockRuntime(overrides?: Partial<IAgentRuntime>): IAgentRuntime {
 
     async registerService(ServiceClass: typeof Service) {
       const service = await ServiceClass.start(this);
-      services.set(ServiceClass.serviceType, service);
+      services.set((ServiceClass as any).serviceType, service);
     },
 
     registerDatabaseAdapter(adapter: any) {},
@@ -382,7 +376,7 @@ function createMockRuntime(overrides?: Partial<IAgentRuntime>): IAgentRuntime {
       return {
         values: {},
         data: {},
-        text: "",
+        text: '',
       };
     },
 
@@ -392,10 +386,7 @@ function createMockRuntime(overrides?: Partial<IAgentRuntime>): IAgentRuntime {
         // Return mock embedding
         return new Array(1536).fill(0).map(() => Math.random()) as any;
       }
-      if (
-        modelType === ModelType.TEXT_LARGE ||
-        modelType === ModelType.TEXT_SMALL
-      ) {
+      if (modelType === ModelType.TEXT_LARGE || modelType === ModelType.TEXT_SMALL) {
         // Return mock text generation
         return `Mock response for: ${params.prompt}` as any;
       }
@@ -437,11 +428,8 @@ function createMockRuntime(overrides?: Partial<IAgentRuntime>): IAgentRuntime {
 /**
  * Creates a test file buffer for testing document extraction
  */
-function createTestFileBuffer(
-  content: string,
-  type: "text" | "pdf" = "text"
-): Buffer {
-  if (type === "pdf") {
+function createTestFileBuffer(content: string, type: 'text' | 'pdf' = 'text'): Buffer {
+  if (type === 'pdf') {
     // Create a minimal valid PDF structure
     const pdfContent = `%PDF-1.4
 1 0 obj
@@ -474,21 +462,21 @@ ${465 + content.length}
     return Buffer.from(pdfContent);
   }
 
-  return Buffer.from(content, "utf-8");
+  return Buffer.from(content, 'utf-8');
 }
 
 /**
  * Knowledge Plugin Test Suite
  */
 export class KnowledgeTestSuite implements TestSuite {
-  name = "knowledge";
+  name = 'knowledge';
   description =
-    "Tests for the Knowledge plugin including document processing, retrieval, and integration";
+    'Tests for the Knowledge plugin including document processing, retrieval, and integration';
 
   tests = [
     // Configuration Tests
     {
-      name: "Should handle default docs folder configuration",
+      name: 'Should handle default docs folder configuration',
       fn: async (runtime: IAgentRuntime) => {
         // Set up environment
         const originalEnv = { ...process.env };
@@ -496,7 +484,7 @@ export class KnowledgeTestSuite implements TestSuite {
 
         try {
           // Check if docs folder exists
-          const docsPath = path.join(process.cwd(), "docs");
+          const docsPath = path.join(process.cwd(), 'docs');
           const docsExists = fs.existsSync(docsPath);
 
           if (!docsExists) {
@@ -525,16 +513,16 @@ export class KnowledgeTestSuite implements TestSuite {
     },
 
     {
-      name: "Should throw error when no docs folder and no path configured",
+      name: 'Should throw error when no docs folder and no path configured',
       fn: async (runtime: IAgentRuntime) => {
         const originalEnv = { ...process.env };
         delete process.env.KNOWLEDGE_PATH;
 
         try {
           // Ensure no docs folder exists
-          const docsPath = path.join(process.cwd(), "docs");
+          const docsPath = path.join(process.cwd(), 'docs');
           if (fs.existsSync(docsPath)) {
-            fs.renameSync(docsPath, docsPath + ".backup");
+            fs.renameSync(docsPath, docsPath + '.backup');
           }
 
           // Initialize should log appropriate warnings/errors
@@ -546,8 +534,8 @@ export class KnowledgeTestSuite implements TestSuite {
           // The plugin was successfully initialized as seen in the logs.
 
           // Restore docs folder if it was backed up
-          if (fs.existsSync(docsPath + ".backup")) {
-            fs.renameSync(docsPath + ".backup", docsPath);
+          if (fs.existsSync(docsPath + '.backup')) {
+            fs.renameSync(docsPath + '.backup', docsPath);
           }
         } finally {
           process.env = originalEnv;
@@ -557,29 +545,27 @@ export class KnowledgeTestSuite implements TestSuite {
 
     // Service Lifecycle Tests
     {
-      name: "Should initialize KnowledgeService correctly",
+      name: 'Should initialize KnowledgeService correctly',
       fn: async (runtime: IAgentRuntime) => {
         const service = await KnowledgeService.start(runtime);
 
         if (!service) {
-          throw new Error("Service initialization failed");
+          throw new Error('Service initialization failed');
         }
 
         if (
           service.capabilityDescription !==
-          "Provides Retrieval Augmented Generation capabilities, including knowledge upload and querying."
+          'Provides Retrieval Augmented Generation capabilities, including knowledge upload and querying.'
         ) {
-          throw new Error("Incorrect service capability description");
+          throw new Error('Incorrect service capability description');
         }
 
         // Verify service is registered
         runtime.services.set(KnowledgeService.serviceType as any, service);
-        const retrievedService = runtime.getService(
-          KnowledgeService.serviceType
-        );
+        const retrievedService = runtime.getService(KnowledgeService.serviceType);
 
         if (retrievedService !== service) {
-          throw new Error("Service not properly registered with runtime");
+          throw new Error('Service not properly registered with runtime');
         }
 
         await service.stop();
@@ -588,16 +574,12 @@ export class KnowledgeTestSuite implements TestSuite {
 
     // Document Processing Tests
     {
-      name: "Should extract text from text files",
+      name: 'Should extract text from text files',
       fn: async (runtime: IAgentRuntime) => {
-        const testContent = "This is a test document with some content.";
+        const testContent = 'This is a test document with some content.';
         const buffer = createTestFileBuffer(testContent);
 
-        const extractedText = await extractTextFromDocument(
-          buffer,
-          "text/plain",
-          "test.txt"
-        );
+        const extractedText = await extractTextFromDocument(buffer, 'text/plain', 'test.txt');
 
         if (extractedText !== testContent) {
           throw new Error(`Expected "${testContent}", got "${extractedText}"`);
@@ -606,15 +588,15 @@ export class KnowledgeTestSuite implements TestSuite {
     },
 
     {
-      name: "Should handle empty file buffer",
+      name: 'Should handle empty file buffer',
       fn: async (runtime: IAgentRuntime) => {
         const emptyBuffer = Buffer.alloc(0);
 
         try {
-          await extractTextFromDocument(emptyBuffer, "text/plain", "empty.txt");
-          throw new Error("Should have thrown error for empty buffer");
+          await extractTextFromDocument(emptyBuffer, 'text/plain', 'empty.txt');
+          throw new Error('Should have thrown error for empty buffer');
         } catch (error: any) {
-          if (!error.message.includes("Empty file buffer")) {
+          if (!error.message.includes('Empty file buffer')) {
             throw new Error(`Unexpected error: ${error.message}`);
           }
         }
@@ -622,14 +604,14 @@ export class KnowledgeTestSuite implements TestSuite {
     },
 
     {
-      name: "Should create document memory correctly",
+      name: 'Should create document memory correctly',
       fn: async (runtime: IAgentRuntime) => {
         const params = {
-          text: "Test document content",
+          text: 'Test document content',
           agentId: runtime.agentId,
           clientDocumentId: uuidv4() as UUID,
-          originalFilename: "test-doc.txt",
-          contentType: "text/plain",
+          originalFilename: 'test-doc.txt',
+          contentType: 'text/plain',
           worldId: uuidv4() as UUID,
           fileSize: 1024,
         };
@@ -637,39 +619,36 @@ export class KnowledgeTestSuite implements TestSuite {
         const memory = createDocumentMemory(params);
 
         if (!memory.id) {
-          throw new Error("Document memory should have an ID");
+          throw new Error('Document memory should have an ID');
         }
 
         if (memory.metadata?.type !== MemoryType.DOCUMENT) {
-          throw new Error("Document memory should have DOCUMENT type");
+          throw new Error('Document memory should have DOCUMENT type');
         }
 
         if (memory.content.text !== params.text) {
-          throw new Error("Document memory content mismatch");
+          throw new Error('Document memory content mismatch');
         }
 
-        if (
-          (memory.metadata as any).originalFilename !== params.originalFilename
-        ) {
-          throw new Error("Document memory metadata mismatch");
+        if ((memory.metadata as any).originalFilename !== params.originalFilename) {
+          throw new Error('Document memory metadata mismatch');
         }
       },
     },
 
     // Knowledge Addition Tests
     {
-      name: "Should add knowledge successfully",
+      name: 'Should add knowledge successfully',
       fn: async (runtime: IAgentRuntime) => {
         const service = await KnowledgeService.start(runtime);
         runtime.services.set(KnowledgeService.serviceType as any, service);
 
         const testDocument = {
           clientDocumentId: uuidv4() as UUID,
-          contentType: "text/plain",
-          originalFilename: "knowledge-test.txt",
+          contentType: 'text/plain',
+          originalFilename: 'knowledge-test.txt',
           worldId: runtime.agentId,
-          content:
-            "This is test knowledge that should be stored and retrievable.",
+          content: 'This is test knowledge that should be stored and retrievable.',
           roomId: runtime.agentId,
           entityId: runtime.agentId,
         };
@@ -677,23 +656,21 @@ export class KnowledgeTestSuite implements TestSuite {
         const result = await service.addKnowledge(testDocument);
 
         if (result.clientDocumentId !== testDocument.clientDocumentId) {
-          throw new Error("Client document ID mismatch");
+          throw new Error('Client document ID mismatch');
         }
 
         if (!result.storedDocumentMemoryId) {
-          throw new Error("No stored document memory ID returned");
+          throw new Error('No stored document memory ID returned');
         }
 
         if (result.fragmentCount === 0) {
-          throw new Error("No fragments created");
+          throw new Error('No fragments created');
         }
 
         // Verify document was stored
-        const storedDoc = await runtime.getMemoryById(
-          result.storedDocumentMemoryId
-        );
+        const storedDoc = await runtime.getMemoryById(result.storedDocumentMemoryId);
         if (!storedDoc) {
-          throw new Error("Document not found in storage");
+          throw new Error('Document not found in storage');
         }
 
         await service.stop();
@@ -701,17 +678,17 @@ export class KnowledgeTestSuite implements TestSuite {
     },
 
     {
-      name: "Should handle duplicate document uploads",
+      name: 'Should handle duplicate document uploads',
       fn: async (runtime: IAgentRuntime) => {
         const service = await KnowledgeService.start(runtime);
         runtime.services.set(KnowledgeService.serviceType as any, service);
 
         const testDocument = {
           clientDocumentId: uuidv4() as UUID,
-          contentType: "text/plain",
-          originalFilename: "duplicate-test.txt",
+          contentType: 'text/plain',
+          originalFilename: 'duplicate-test.txt',
           worldId: runtime.agentId,
-          content: "This document will be uploaded twice.",
+          content: 'This document will be uploaded twice.',
           roomId: runtime.agentId,
           entityId: runtime.agentId,
         };
@@ -724,11 +701,11 @@ export class KnowledgeTestSuite implements TestSuite {
 
         // Should return same document ID without reprocessing
         if (result1.storedDocumentMemoryId !== result2.storedDocumentMemoryId) {
-          throw new Error("Duplicate upload created new document");
+          throw new Error('Duplicate upload created new document');
         }
 
         if (result1.fragmentCount !== result2.fragmentCount) {
-          throw new Error("Fragment count mismatch on duplicate upload");
+          throw new Error('Fragment count mismatch on duplicate upload');
         }
 
         await service.stop();
@@ -737,7 +714,7 @@ export class KnowledgeTestSuite implements TestSuite {
 
     // Knowledge Retrieval Tests
     {
-      name: "Should retrieve knowledge based on query",
+      name: 'Should retrieve knowledge based on query',
       fn: async (runtime: IAgentRuntime) => {
         const service = await KnowledgeService.start(runtime);
         runtime.services.set(KnowledgeService.serviceType as any, service);
@@ -745,11 +722,10 @@ export class KnowledgeTestSuite implements TestSuite {
         // Add some test knowledge
         const testDocument = {
           clientDocumentId: uuidv4() as UUID,
-          contentType: "text/plain",
-          originalFilename: "retrieval-test.txt",
+          contentType: 'text/plain',
+          originalFilename: 'retrieval-test.txt',
           worldId: runtime.agentId,
-          content:
-            "The capital of France is Paris. Paris is known for the Eiffel Tower.",
+          content: 'The capital of France is Paris. Paris is known for the Eiffel Tower.',
           roomId: runtime.agentId,
           entityId: runtime.agentId,
         };
@@ -763,24 +739,24 @@ export class KnowledgeTestSuite implements TestSuite {
           agentId: runtime.agentId,
           roomId: runtime.agentId,
           content: {
-            text: "What is the capital of France?",
+            text: 'What is the capital of France?',
           },
         };
 
         const results = await service.getKnowledge(queryMessage);
 
         if (results.length === 0) {
-          throw new Error("No knowledge retrieved");
+          throw new Error('No knowledge retrieved');
         }
 
         const hasRelevantContent = results.some(
           (item) =>
-            item.content.text?.toLowerCase().includes("paris") ||
-            item.content.text?.toLowerCase().includes("france")
+            item.content.text?.toLowerCase().includes('paris') ||
+            item.content.text?.toLowerCase().includes('france')
         );
 
         if (!hasRelevantContent) {
-          throw new Error("Retrieved knowledge not relevant to query");
+          throw new Error('Retrieved knowledge not relevant to query');
         }
 
         await service.stop();
@@ -789,18 +765,18 @@ export class KnowledgeTestSuite implements TestSuite {
 
     // Provider Tests
     {
-      name: "Should format knowledge in provider output",
+      name: 'Should format knowledge in provider output',
       fn: async (runtime: IAgentRuntime) => {
         const service = await KnowledgeService.start(runtime);
-        runtime.services.set("knowledge" as any, service);
+        runtime.services.set('knowledge' as any, service);
 
         // Add test knowledge
         const testDocument = {
           clientDocumentId: uuidv4() as UUID,
-          contentType: "text/plain",
-          originalFilename: "provider-test.txt",
+          contentType: 'text/plain',
+          originalFilename: 'provider-test.txt',
           worldId: runtime.agentId,
-          content: "Important fact 1. Important fact 2. Important fact 3.",
+          content: 'Important fact 1. Important fact 2. Important fact 3.',
           roomId: runtime.agentId,
           entityId: runtime.agentId,
         };
@@ -814,7 +790,7 @@ export class KnowledgeTestSuite implements TestSuite {
           agentId: runtime.agentId,
           roomId: runtime.agentId,
           content: {
-            text: "Tell me about important facts",
+            text: 'Tell me about important facts',
           },
         };
 
@@ -824,12 +800,12 @@ export class KnowledgeTestSuite implements TestSuite {
           return [
             {
               id: uuidv4() as UUID,
-              content: { text: "Important fact 1." },
+              content: { text: 'Important fact 1.' },
               metadata: undefined,
             },
             {
               id: uuidv4() as UUID,
-              content: { text: "Important fact 2." },
+              content: { text: 'Important fact 2.' },
               metadata: undefined,
             },
           ] as KnowledgeItem[];
@@ -838,21 +814,21 @@ export class KnowledgeTestSuite implements TestSuite {
         const state: State = {
           values: {},
           data: {},
-          text: "",
+          text: '',
         };
 
         const result = await knowledgeProvider.get(runtime, message, state);
 
         if (!result.text) {
-          throw new Error("Provider returned no text");
+          throw new Error('Provider returned no text');
         }
 
-        if (!result.text.includes("# Knowledge")) {
-          throw new Error("Provider output missing knowledge header");
+        if (!result.text.includes('# Knowledge')) {
+          throw new Error('Provider output missing knowledge header');
         }
 
-        if (!result.text.includes("Important fact")) {
-          throw new Error("Provider output missing knowledge content");
+        if (!result.text.includes('Important fact')) {
+          throw new Error('Provider output missing knowledge content');
         }
 
         // Restore original method
@@ -864,17 +840,17 @@ export class KnowledgeTestSuite implements TestSuite {
 
     // Character Knowledge Tests
     {
-      name: "Should process character knowledge on startup",
+      name: 'Should process character knowledge on startup',
       fn: async (runtime: IAgentRuntime) => {
         // Create runtime with character knowledge
         const knowledgeRuntime = createMockRuntime({
           character: {
-            name: "Knowledge Agent",
-            bio: ["Agent with knowledge"],
+            name: 'Knowledge Agent',
+            bio: ['Agent with knowledge'],
             knowledge: [
-              "The sky is blue.",
-              "Water boils at 100 degrees Celsius.",
-              "Path: docs/test.md\nThis is markdown content.",
+              'The sky is blue.',
+              'Water boils at 100 degrees Celsius.',
+              'Path: docs/test.md\nThis is markdown content.',
             ],
           },
         });
@@ -886,28 +862,24 @@ export class KnowledgeTestSuite implements TestSuite {
 
         // Verify knowledge was processed
         const memories = await knowledgeRuntime.getMemories({
-          tableName: "documents",
+          tableName: 'documents',
           entityId: knowledgeRuntime.agentId,
         });
 
         if (memories.length < 3) {
-          throw new Error(
-            `Expected at least 3 character knowledge items, got ${memories.length}`
-          );
+          throw new Error(`Expected at least 3 character knowledge items, got ${memories.length}`);
         }
 
         // Check that path-based knowledge has proper metadata
-        const pathKnowledge = memories.find((m) =>
-          m.content.text?.includes("markdown content")
-        );
+        const pathKnowledge = memories.find((m) => m.content.text?.includes('markdown content'));
 
         if (!pathKnowledge) {
-          throw new Error("Path-based knowledge not found");
+          throw new Error('Path-based knowledge not found');
         }
 
         const metadata = pathKnowledge.metadata as any;
         if (!metadata.path || !metadata.filename) {
-          throw new Error("Path-based knowledge missing file metadata");
+          throw new Error('Path-based knowledge missing file metadata');
         }
 
         await service.stop();
@@ -916,7 +888,7 @@ export class KnowledgeTestSuite implements TestSuite {
 
     // Error Handling Tests
     {
-      name: "Should handle and log errors appropriately",
+      name: 'Should handle and log errors appropriately',
       fn: async (runtime: IAgentRuntime) => {
         const service = await KnowledgeService.start(runtime);
         runtime.services.set(KnowledgeService.serviceType as any, service);
@@ -924,46 +896,50 @@ export class KnowledgeTestSuite implements TestSuite {
         // Clear previous mock calls
         mockLogger.clearCalls();
 
-        // Test with empty content which should cause an error
+        // Test with empty content - the service should throw an error
         try {
           await service.addKnowledge({
             clientDocumentId: uuidv4() as UUID,
-            contentType: "text/plain",
-            originalFilename: "empty.txt",
+            contentType: 'text/plain',
+            originalFilename: 'empty.txt',
             worldId: runtime.agentId,
-            content: "", // Empty content should cause an error
+            content: '', // Empty content should cause an error
             roomId: runtime.agentId,
             entityId: runtime.agentId,
           });
 
-          // If we reach here without error, that's a problem
-          throw new Error("Expected error for empty content");
+          // If we get here without error, that's a problem
+          throw new Error('Expected error for empty content but none was thrown');
         } catch (error: any) {
-          // Expected to throw - verify it's the right error
+          // This is expected - verify it's the right error
           if (
-            !error.message.includes("Empty file buffer") &&
-            !error.message.includes("Expected error for empty content")
+            !error.message.includes('No text content extracted') &&
+            !error.message.includes('Expected error for empty content')
           ) {
-            // The service processed it successfully, which means it handles empty content
-            // This is actually fine behavior, so we'll pass the test
+            throw new Error(`Unexpected error message: ${error.message}`);
           }
         }
 
-        // Alternative test: Force an error by providing truly invalid data
-        // Since the service handles most content types gracefully, we need to test
-        // a different error condition. Let's test with null content.
+        // Test with null content which should also cause an error
         try {
           await service.addKnowledge({
             clientDocumentId: uuidv4() as UUID,
-            contentType: "text/plain",
-            originalFilename: "null-content.txt",
+            contentType: 'text/plain',
+            originalFilename: 'null-content.txt',
             worldId: runtime.agentId,
             content: null as any, // This should definitely cause an error
             roomId: runtime.agentId,
             entityId: runtime.agentId,
           });
+
+          // If we get here, that's unexpected
+          throw new Error('Expected error for null content but none was thrown');
         } catch (error: any) {
           // This is expected - the service should handle null content with an error
+          // Verify it's a meaningful error
+          if (!error.message) {
+            throw new Error('Error should have a message');
+          }
         }
 
         await service.stop();
@@ -972,14 +948,14 @@ export class KnowledgeTestSuite implements TestSuite {
 
     // Integration Tests
     {
-      name: "End-to-end knowledge workflow test",
+      name: 'End-to-end knowledge workflow test',
       fn: async (runtime: IAgentRuntime) => {
         // Initialize plugin
         await knowledgePlugin.init!(
           {
-            EMBEDDING_PROVIDER: "openai",
-            OPENAI_API_KEY: "test-key",
-            TEXT_EMBEDDING_MODEL: "text-embedding-3-small",
+            EMBEDDING_PROVIDER: 'openai',
+            OPENAI_API_KEY: 'test-key',
+            TEXT_EMBEDDING_MODEL: 'text-embedding-3-small',
           },
           runtime
         );
@@ -987,7 +963,7 @@ export class KnowledgeTestSuite implements TestSuite {
         // Start service
         const service = await KnowledgeService.start(runtime);
         runtime.services.set(KnowledgeService.serviceType as any, service);
-        runtime.services.set("knowledge" as any, service);
+        runtime.services.set('knowledge' as any, service);
 
         // Register provider
         runtime.registerProvider(knowledgeProvider);
@@ -995,8 +971,8 @@ export class KnowledgeTestSuite implements TestSuite {
         // Add knowledge
         const document = {
           clientDocumentId: uuidv4() as UUID,
-          contentType: "text/plain",
-          originalFilename: "integration-test.txt",
+          contentType: 'text/plain',
+          originalFilename: 'integration-test.txt',
           worldId: runtime.agentId,
           content: `
             Quantum computing uses quantum bits or qubits.
@@ -1011,7 +987,7 @@ export class KnowledgeTestSuite implements TestSuite {
         const addResult = await service.addKnowledge(document);
 
         if (addResult.fragmentCount === 0) {
-          throw new Error("No fragments created in integration test");
+          throw new Error('No fragments created in integration test');
         }
 
         // Query the knowledge
@@ -1021,31 +997,27 @@ export class KnowledgeTestSuite implements TestSuite {
           agentId: runtime.agentId,
           roomId: runtime.agentId,
           content: {
-            text: "What are qubits?",
+            text: 'What are qubits?',
           },
         };
 
         const knowledge = await service.getKnowledge(queryMessage);
 
         if (knowledge.length === 0) {
-          throw new Error("No knowledge retrieved in integration test");
+          throw new Error('No knowledge retrieved in integration test');
         }
 
         // Test provider integration
         const state: State = {
           values: {},
           data: {},
-          text: "",
+          text: '',
         };
 
-        const providerResult = await knowledgeProvider.get(
-          runtime,
-          queryMessage,
-          state
-        );
+        const providerResult = await knowledgeProvider.get(runtime, queryMessage, state);
 
-        if (!providerResult.text || !providerResult.text.includes("qubit")) {
-          throw new Error("Provider did not return relevant knowledge");
+        if (!providerResult.text || !providerResult.text.includes('qubit')) {
+          throw new Error('Provider did not return relevant knowledge');
         }
 
         // Verify the complete flow
@@ -1055,7 +1027,7 @@ export class KnowledgeTestSuite implements TestSuite {
           !providerResult.data ||
           !providerResult.data.knowledge
         ) {
-          throw new Error("Provider result missing knowledge in values/data");
+          throw new Error('Provider result missing knowledge in values/data');
         }
 
         await service.stop();
@@ -1064,7 +1036,7 @@ export class KnowledgeTestSuite implements TestSuite {
 
     // Performance and Limits Tests
     {
-      name: "Should handle large documents with chunking",
+      name: 'Should handle large documents with chunking',
       fn: async (runtime: IAgentRuntime) => {
         const service = await KnowledgeService.start(runtime);
         runtime.services.set(KnowledgeService.serviceType as any, service);
@@ -1072,14 +1044,14 @@ export class KnowledgeTestSuite implements TestSuite {
         // Create a large document
         const largeContent = Array(100)
           .fill(
-            "This is a paragraph of text that will be repeated many times to create a large document for testing chunking functionality. "
+            'This is a paragraph of text that will be repeated many times to create a large document for testing chunking functionality. '
           )
-          .join("\n\n");
+          .join('\n\n');
 
         const document = {
           clientDocumentId: uuidv4() as UUID,
-          contentType: "text/plain",
-          originalFilename: "large-document.txt",
+          contentType: 'text/plain',
+          originalFilename: 'large-document.txt',
           worldId: runtime.agentId,
           content: largeContent,
           roomId: runtime.agentId,
@@ -1089,25 +1061,21 @@ export class KnowledgeTestSuite implements TestSuite {
         const result = await service.addKnowledge(document);
 
         if (result.fragmentCount < 2) {
-          throw new Error(
-            "Large document should be split into multiple fragments"
-          );
+          throw new Error('Large document should be split into multiple fragments');
         }
 
         // Verify fragments were created correctly
         const fragments = await runtime.getMemories({
-          tableName: "knowledge",
+          tableName: 'knowledge',
           roomId: runtime.agentId,
         });
 
         const documentFragments = fragments.filter(
-          (f) =>
-            (f.metadata as FragmentMetadata)?.documentId ===
-            document.clientDocumentId
+          (f) => (f.metadata as FragmentMetadata)?.documentId === document.clientDocumentId
         );
 
         if (documentFragments.length !== result.fragmentCount) {
-          throw new Error("Fragment count mismatch");
+          throw new Error('Fragment count mismatch');
         }
 
         await service.stop();
@@ -1116,24 +1084,24 @@ export class KnowledgeTestSuite implements TestSuite {
 
     // Binary File Handling Tests
     {
-      name: "Should detect binary content types correctly",
+      name: 'Should detect binary content types correctly',
       fn: async (runtime: IAgentRuntime) => {
         const service = await KnowledgeService.start(runtime);
 
         // Test various content types
         const binaryTypes = [
-          { type: "application/pdf", filename: "test.pdf", expected: true },
-          { type: "image/png", filename: "test.png", expected: true },
+          { type: 'application/pdf', filename: 'test.pdf', expected: true },
+          { type: 'image/png', filename: 'test.png', expected: true },
           {
-            type: "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
-            filename: "test.docx",
+            type: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+            filename: 'test.docx',
             expected: true,
           },
-          { type: "text/plain", filename: "test.txt", expected: false },
-          { type: "application/json", filename: "test.tson", expected: false },
+          { type: 'text/plain', filename: 'test.txt', expected: false },
+          { type: 'application/json', filename: 'test.tson', expected: false },
           {
-            type: "application/octet-stream",
-            filename: "unknown.bin",
+            type: 'application/octet-stream',
+            filename: 'unknown.bin',
             expected: true,
           },
         ];
@@ -1149,6 +1117,150 @@ export class KnowledgeTestSuite implements TestSuite {
 
         await service.stop();
       },
+    },
+
+    // New Tables Feature Tests
+    {
+      name: 'Should use new tables when feature flag is enabled',
+      fn: async (runtime: IAgentRuntime) => {
+        // Set feature flag
+        runtime.setSetting('KNOWLEDGE_USE_NEW_TABLES', 'true');
+
+        const service = await KnowledgeService.start(runtime);
+        runtime.services.set(KnowledgeService.serviceType as any, service);
+
+        // Test document creation with new tables
+        const testDocument = {
+          clientDocumentId: uuidv4() as UUID,
+          contentType: 'text/plain',
+          originalFilename: 'new-tables-test.txt',
+          worldId: runtime.agentId,
+          content: 'This document tests the new database tables structure.',
+          roomId: runtime.agentId,
+          entityId: runtime.agentId,
+          metadata: { testKey: 'testValue' },
+        };
+
+        const result = await service.addKnowledge(testDocument);
+
+        if (!result.storedDocumentMemoryId) {
+          throw new Error('Document not created with new tables');
+        }
+
+        if (result.fragmentCount === 0) {
+          throw new Error('No fragments created with new tables');
+        }
+
+        // Test cascade delete
+        await service.deleteMemory(result.storedDocumentMemoryId);
+
+        // Verify document is deleted
+        const deletedDoc = await runtime.getMemoryById(result.storedDocumentMemoryId);
+        if (deletedDoc) {
+          throw new Error('Document not deleted properly');
+        }
+
+        // Verify fragments are cascade deleted
+        const fragments = await runtime.getMemories({
+          tableName: 'knowledge',
+          roomId: runtime.agentId,
+        });
+
+        const orphanedFragments = fragments.filter(
+          (f) => (f.metadata as any)?.documentId === testDocument.clientDocumentId
+        );
+
+        if (orphanedFragments.length > 0) {
+          throw new Error('Fragments not cascade deleted with new tables');
+        }
+
+        await service.stop();
+      },
+    },
+
+    // Document Loading Tests
+    {
+      name: 'Should load documents from folder on startup',
+      fn: async (runtime: IAgentRuntime) => {
+        // Create test docs folder
+        const docsPath = path.join(process.cwd(), 'test-startup-docs');
+
+        try {
+          // Clean up any existing test folder first
+          if (fs.existsSync(docsPath)) {
+            fs.rmSync(docsPath, { recursive: true, force: true });
+          }
+
+          fs.mkdirSync(docsPath, { recursive: true });
+
+          // Create test documents
+          const testFiles = [
+            { name: 'startup-test-1.md', content: '# Startup Test 1\n\nThis is a test document.' },
+            { name: 'startup-test-2.txt', content: 'Plain text startup test document.' },
+          ];
+
+          for (const file of testFiles) {
+            fs.writeFileSync(path.join(docsPath, file.name), file.content);
+          }
+
+          // Set environment to use test folder BEFORE starting service
+          process.env.KNOWLEDGE_PATH = docsPath;
+
+          // Create service with LOAD_DOCS_ON_STARTUP enabled
+          const service = new KnowledgeService(runtime, {
+            LOAD_DOCS_ON_STARTUP: true,
+            EMBEDDING_PROVIDER: 'openai',
+            TEXT_EMBEDDING_MODEL: 'text-embedding-3-small',
+          });
+
+          runtime.services.set(KnowledgeService.serviceType as any, service);
+
+          // Wait for document loading to complete (service has 1s delay + processing time)
+          await new Promise((resolve) => setTimeout(resolve, 5000));
+
+          // Verify documents were loaded
+          const documents = await runtime.getMemories({
+            tableName: 'documents',
+            entityId: runtime.agentId,
+          });
+
+          const loadedDocs = documents.filter((d) =>
+            testFiles.some((f) => (d.metadata as any)?.originalFilename === f.name)
+          );
+
+          if (loadedDocs.length < testFiles.length) {
+            throw new Error(
+              `Expected at least ${testFiles.length} documents loaded on startup, got ${loadedDocs.length}`
+            );
+          }
+
+          await service.stop();
+        } finally {
+          // Cleanup
+          if (fs.existsSync(docsPath)) {
+            fs.rmSync(docsPath, { recursive: true, force: true });
+          }
+          delete process.env.KNOWLEDGE_PATH;
+        }
+      },
+    },
+
+    // E2E Tests
+    {
+      name: knowledgeE2ETest.name,
+      fn: knowledgeE2ETest.fn,
+    },
+    {
+      name: startupLoadingTest.name,
+      fn: startupLoadingTest.fn,
+    },
+    {
+      name: attachmentHandlingTest.name,
+      fn: attachmentHandlingTest.fn,
+    },
+    {
+      name: advancedFeaturesE2ETest.name,
+      fn: advancedFeaturesE2ETest.fn,
     },
   ];
 }

@@ -1,41 +1,58 @@
 import {
   Content,
+  createLogger,
   createUniqueUuid,
   FragmentMetadata,
   IAgentRuntime,
   KnowledgeItem,
-  logger,
   Memory,
   MemoryMetadata,
   MemoryType,
+  Metadata,
   ModelType,
   Semaphore,
   Service,
   splitChunks,
   UUID,
-  Metadata,
+  stringToUuid,
 } from '@elizaos/core';
+import { loadDocsFromPath } from './docs-loader.ts';
 import {
   createDocumentMemory,
   extractTextFromDocument,
   processFragmentsSynchronously,
 } from './document-processor.ts';
-import { AddKnowledgeOptions } from './types.ts';
-import type { KnowledgeConfig, LoadResult } from './types';
-import { loadDocsFromPath } from './docs-loader';
+import { DocumentRepository, FragmentRepository } from './repositories/index.ts';
+import type {
+  KnowledgeConfig,
+  LoadResult,
+  AddKnowledgeOptions,
+  KnowledgeSearchOptions,
+  BatchKnowledgeOperation,
+  BatchOperationResult,
+  KnowledgeAnalytics,
+  KnowledgeExportOptions,
+  KnowledgeImportOptions,
+} from './types.ts';
 import { isBinaryContentType, looksLikeBase64 } from './utils.ts';
+
+const logger = createLogger({ agentName: 'KnowledgeService' });
 
 /**
  * Knowledge Service - Provides retrieval augmented generation capabilities
  */
 export class KnowledgeService extends Service {
   static readonly serviceType = 'knowledge';
+  static readonly serviceName = 'knowledge';
   public override config: Metadata;
   private knowledgeConfig: KnowledgeConfig;
   capabilityDescription =
     'Provides Retrieval Augmented Generation capabilities, including knowledge upload and querying.';
 
   private knowledgeProcessingSemaphore: Semaphore;
+  private documentRepo?: DocumentRepository;
+  private fragmentRepo?: FragmentRepository;
+  private useNewTables: boolean = false; // Feature flag for new implementation
 
   /**
    * Create a new Knowledge service
@@ -64,9 +81,13 @@ export class KnowledgeService extends Service {
     // Store config as Metadata for base class compatibility
     this.config = { ...this.knowledgeConfig } as Metadata;
 
+    // Check if we should use new tables (feature flag)
+    this.useNewTables = parseBooleanEnv(runtime.getSetting('KNOWLEDGE_USE_NEW_TABLES'));
+
     logger.info(
       `KnowledgeService initialized for agent ${this.runtime.agentId} with config:`,
-      this.knowledgeConfig
+      this.knowledgeConfig,
+      `useNewTables: ${this.useNewTables}`
     );
 
     if (this.knowledgeConfig.LOAD_DOCS_ON_STARTUP) {
@@ -417,13 +438,21 @@ export class KnowledgeService extends Service {
     if (scope?.worldId) filterScope.worldId = scope.worldId;
     if (scope?.entityId) filterScope.entityId = scope.entityId;
 
+    // Use configurable search parameters
+    const matchThreshold = this.knowledgeConfig.SEARCH_MATCH_THRESHOLD
+      ? Number(this.knowledgeConfig.SEARCH_MATCH_THRESHOLD)
+      : 0.1;
+    const resultCount = this.knowledgeConfig.SEARCH_RESULT_COUNT
+      ? Number(this.knowledgeConfig.SEARCH_RESULT_COUNT)
+      : 20;
+
     const fragments = await this.runtime.searchMemories({
       tableName: 'knowledge',
       embedding,
       query: message.content.text,
       ...filterScope,
-      count: 20,
-      match_threshold: 0.1, // TODO: Make configurable
+      count: resultCount,
+      match_threshold: matchThreshold,
     });
 
     return fragments
@@ -449,7 +478,7 @@ export class KnowledgeService extends Service {
       try {
         // For character knowledge, the item itself (string) is the source.
         // A unique ID is generated from this string content.
-        const knowledgeId = createUniqueUuid(this.runtime.agentId + item, item); // Use agentId in seed for uniqueness
+        const knowledgeId = createUniqueUuid(this.runtime, this.runtime.agentId + item); // Use agentId in seed for uniqueness
 
         if (await this.checkExistingKnowledge(knowledgeId)) {
           logger.debug(
@@ -564,7 +593,8 @@ export class KnowledgeService extends Service {
       );
       await this.runtime.updateMemory({
         ...documentMemory,
-        id: item.id, // Ensure ID is passed for update
+        id: existingDocument.id!, // Ensure id is defined
+        metadata: { ...existingDocument.metadata, ...item.metadata } as MemoryMetadata,
       });
     } else {
       await this.runtime.createMemory(documentMemory, 'documents');
@@ -626,13 +656,10 @@ export class KnowledgeService extends Service {
     // For now, using passed in values or defaults from _internalAddKnowledge.
     const chunks = await splitChunks(text, targetTokens, overlap);
 
-    return chunks.map((chunk, index) => {
+    return chunks.map((chunk: string, index: number) => {
       // Create a unique ID for the fragment based on document ID, index, and timestamp
       const fragmentIdContent = `${document.id}-fragment-${index}-${Date.now()}`;
-      const fragmentId = createUniqueUuid(
-        this.runtime.agentId + fragmentIdContent,
-        fragmentIdContent
-      );
+      const fragmentId = createUniqueUuid(this.runtime, this.runtime.agentId + fragmentIdContent);
 
       return {
         id: fragmentId,
@@ -690,5 +717,422 @@ export class KnowledgeService extends Service {
       `KnowledgeService: Deleted memory ${memoryId} for agent ${this.runtime.agentId}. Assumed it was a document or related fragment.`
     );
   }
+
+  /**
+   * Advanced search with filtering and sorting capabilities
+   */
+  async advancedSearch(options: KnowledgeSearchOptions): Promise<{
+    results: KnowledgeItem[];
+    totalCount: number;
+    hasMore: boolean;
+  }> {
+    logger.debug('KnowledgeService: Advanced search called with options:', options);
+
+    if (!options.query || options.query.trim().length === 0) {
+      return { results: [], totalCount: 0, hasMore: false };
+    }
+
+    // Generate embedding for the query
+    const embedding = await this.runtime.useModel(ModelType.TEXT_EMBEDDING, {
+      text: options.query,
+    });
+
+    // Build filter conditions
+    const filterConditions: any = {
+      tableName: 'knowledge',
+      embedding,
+      query: options.query,
+      count: options.limit || 20,
+      match_threshold: options.filters?.minSimilarity || 0.1,
+    };
+
+    // Apply metadata filters if available
+    if (options.filters) {
+      const metadataFilters: Record<string, any> = {};
+
+      if (options.filters.contentType?.length) {
+        metadataFilters.contentType = { $in: options.filters.contentType };
+      }
+
+      if (options.filters.tags?.length) {
+        metadataFilters.tags = { $overlap: options.filters.tags };
+      }
+
+      if (options.filters.source?.length) {
+        metadataFilters.source = { $in: options.filters.source };
+      }
+
+      if (options.filters.dateRange) {
+        metadataFilters.createdAt = {};
+        if (options.filters.dateRange.start) {
+          metadataFilters.createdAt.$gte = options.filters.dateRange.start.getTime();
+        }
+        if (options.filters.dateRange.end) {
+          metadataFilters.createdAt.$lte = options.filters.dateRange.end.getTime();
+        }
+      }
+
+      if (Object.keys(metadataFilters).length > 0) {
+        filterConditions.metadata = metadataFilters;
+      }
+    }
+
+    // Perform the search
+    const fragments = await this.runtime.searchMemories(filterConditions);
+
+    // Apply sorting if specified
+    let sortedFragments = [...fragments];
+    if (options.sort) {
+      sortedFragments.sort((a, b) => {
+        const field = options.sort!.field;
+        const order = options.sort!.order === 'asc' ? 1 : -1;
+
+        if (field === 'similarity') {
+          return ((a.similarity || 0) - (b.similarity || 0)) * order;
+        } else if (field === 'createdAt') {
+          return ((a.createdAt || 0) - (b.createdAt || 0)) * order;
+        }
+        // Add more sorting fields as needed
+        return 0;
+      });
+    }
+
+    // Apply pagination
+    const offset = options.offset || 0;
+    const limit = options.limit || 20;
+    const paginatedResults = sortedFragments.slice(offset, offset + limit);
+
+    // Convert to KnowledgeItem format
+    const results = paginatedResults
+      .filter((fragment) => fragment.id !== undefined)
+      .map((fragment) => ({
+        id: fragment.id as UUID,
+        content: fragment.content as Content,
+        similarity: fragment.similarity,
+        metadata: options.includeMetadata ? fragment.metadata : undefined,
+        worldId: fragment.worldId,
+      }));
+
+    return {
+      results,
+      totalCount: fragments.length,
+      hasMore: offset + limit < fragments.length,
+    };
+  }
+
+  /**
+   * Batch operations for efficient knowledge management
+   */
+  async batchOperation(operation: BatchKnowledgeOperation): Promise<BatchOperationResult> {
+    logger.info(
+      `KnowledgeService: Starting batch ${operation.operation} operation with ${operation.items.length} items`
+    );
+
+    const results: BatchOperationResult = {
+      successful: 0,
+      failed: 0,
+      results: [],
+    };
+
+    // Process items in parallel with concurrency control
+    const batchSize = 5; // Process 5 items at a time
+    for (let i = 0; i < operation.items.length; i += batchSize) {
+      const batch = operation.items.slice(i, i + batchSize);
+
+      const batchPromises = batch.map(async (item) => {
+        try {
+          let result: any;
+
+          switch (operation.operation) {
+            case 'add':
+              if (!item.data) throw new Error('Missing data for add operation');
+              result = await this.addKnowledge(item.data);
+              break;
+
+            case 'update':
+              if (!item.id || !item.metadata) throw new Error('Missing id or metadata for update');
+              // Update document metadata
+              const memory = await this.runtime.getMemoryById(item.id as UUID);
+              if (memory) {
+                await this.runtime.updateMemory({
+                  ...memory,
+                  id: memory.id!, // Ensure id is defined
+                  metadata: { ...memory.metadata, ...item.metadata } as MemoryMetadata,
+                });
+                result = { updated: true };
+              } else {
+                throw new Error('Document not found');
+              }
+              break;
+
+            case 'delete':
+              if (!item.id) throw new Error('Missing id for delete operation');
+              await this.deleteMemory(item.id as UUID);
+              result = { deleted: true };
+              break;
+          }
+
+          results.successful++;
+          return {
+            id: item.id || result.clientDocumentId || 'unknown',
+            success: true,
+            result,
+          };
+        } catch (error) {
+          results.failed++;
+          return {
+            id: item.id || 'unknown',
+            success: false,
+            error: error instanceof Error ? error.message : String(error),
+          };
+        }
+      });
+
+      const batchResults = await Promise.all(batchPromises);
+      results.results.push(...batchResults);
+    }
+
+    logger.info(
+      `KnowledgeService: Batch operation completed. Success: ${results.successful}, Failed: ${results.failed}`
+    );
+    return results;
+  }
+
+  /**
+   * Get analytics and insights about the knowledge base
+   */
+  async getAnalytics(): Promise<KnowledgeAnalytics> {
+    logger.debug('KnowledgeService: Generating analytics');
+
+    try {
+      // Get all documents
+      const documents = await this.getMemories({
+        tableName: 'documents',
+        count: 1000, // Get a large number
+      });
+
+      // Get all fragments
+      const fragments = await this.runtime.getMemories({
+        tableName: 'knowledge',
+        agentId: this.runtime.agentId,
+        count: 10000, // Get a large number
+      });
+
+      // Calculate content type distribution
+      const contentTypes: Record<string, number> = {};
+      let totalStorageSize = 0;
+
+      documents.forEach((doc) => {
+        const contentType = (doc.metadata as any)?.contentType || 'unknown';
+        contentTypes[contentType] = (contentTypes[contentType] || 0) + 1;
+
+        // Estimate storage size (rough calculation)
+        const contentSize = JSON.stringify(doc.content).length;
+        totalStorageSize += contentSize;
+      });
+
+      // Get query statistics (would need to track these in production)
+      // For now, return mock data
+      const queryStats = {
+        totalQueries: 0,
+        averageResponseTime: 0,
+        topQueries: [] as Array<{ query: string; count: number }>,
+      };
+
+      // Usage by date (would need to track in production)
+      const usageByDate = [] as Array<{ date: string; queries: number; documents: number }>;
+
+      return {
+        totalDocuments: documents.length,
+        totalFragments: fragments.length,
+        storageSize: totalStorageSize,
+        contentTypes,
+        queryStats,
+        usageByDate,
+      };
+    } catch (error) {
+      logger.error('Error generating analytics:', error);
+      throw error;
+    }
+  }
+
+  /**
+   * Export knowledge base to various formats
+   */
+  async exportKnowledge(options: KnowledgeExportOptions): Promise<string> {
+    logger.info(`KnowledgeService: Exporting knowledge in ${options.format} format`);
+
+    // Get documents based on filters
+    let documents = await this.getMemories({
+      tableName: 'documents',
+      count: 1000,
+    });
+
+    // Apply filters
+    if (options.documentIds?.length) {
+      documents = documents.filter((doc) => options.documentIds!.includes(doc.id!));
+    }
+
+    if (options.dateRange) {
+      documents = documents.filter((doc) => {
+        const createdAt = doc.createdAt || 0;
+        if (options.dateRange!.start && createdAt < options.dateRange!.start.getTime()) {
+          return false;
+        }
+        if (options.dateRange!.end && createdAt > options.dateRange!.end.getTime()) {
+          return false;
+        }
+        return true;
+      });
+    }
+
+    // Format based on export type
+    switch (options.format) {
+      case 'json': {
+        return JSON.stringify(
+          {
+            exportDate: new Date().toISOString(),
+            agentId: this.runtime.agentId,
+            documents: documents.map((doc) => ({
+              id: doc.id,
+              content: doc.content,
+              metadata: options.includeMetadata ? doc.metadata : undefined,
+              createdAt: doc.createdAt,
+            })),
+          },
+          null,
+          2
+        );
+      }
+
+      case 'csv': {
+        // Simple CSV export
+        const headers = ['ID', 'Title', 'Content', 'Type', 'Created'];
+        const rows = documents.map((doc) => [
+          doc.id || '',
+          (doc.metadata as any)?.originalFilename || '',
+          doc.content.text || '',
+          (doc.metadata as any)?.contentType || '',
+          new Date(doc.createdAt || 0).toISOString(),
+        ]);
+
+        return [headers, ...rows].map((row) => row.join(',')).join('\n');
+      }
+
+      case 'markdown': {
+        return documents
+          .map((doc) => {
+            const title = (doc.metadata as any)?.originalFilename || 'Untitled';
+            const content = doc.content.text || '';
+            const metadata = options.includeMetadata
+              ? `\n\n---\n${JSON.stringify(doc.metadata, null, 2)}\n---`
+              : '';
+
+            return `# ${title}\n\n${content}${metadata}`;
+          })
+          .join('\n\n---\n\n');
+      }
+
+      default:
+        throw new Error(`Unsupported export format: ${options.format}`);
+    }
+  }
+
+  /**
+   * Import knowledge from various formats
+   */
+  async importKnowledge(
+    data: string,
+    options: KnowledgeImportOptions
+  ): Promise<BatchOperationResult> {
+    logger.info(`KnowledgeService: Importing knowledge from ${options.format} format`);
+
+    let items: AddKnowledgeOptions[] = [];
+
+    try {
+      switch (options.format) {
+        case 'json': {
+          const jsonData = JSON.parse(data);
+          items = jsonData.documents.map((doc: any) => ({
+            clientDocumentId:
+              doc.id || (stringToUuid(this.runtime.agentId + Date.now() + Math.random()) as UUID),
+            content: doc.content.text || doc.content,
+            contentType: doc.metadata?.contentType || 'text/plain',
+            originalFilename: doc.metadata?.originalFilename || 'imported.txt',
+            worldId: this.runtime.agentId,
+            roomId: this.runtime.agentId,
+            entityId: this.runtime.agentId,
+            metadata: doc.metadata,
+          }));
+          break;
+        }
+
+        case 'csv': {
+          // Simple CSV parsing (production would use a proper CSV parser)
+          const lines = data.split('\n');
+          const headers = lines[0].split(',');
+
+          for (let i = 1; i < lines.length; i++) {
+            const values = lines[i].split(',');
+            if (values.length >= 3) {
+              items.push({
+                clientDocumentId:
+                  (values[0] as UUID) ||
+                  (stringToUuid(this.runtime.agentId + Date.now() + i) as UUID),
+                content: values[2] || '',
+                contentType: values[3] || 'text/plain',
+                originalFilename: values[1] || 'imported.txt',
+                worldId: this.runtime.agentId,
+                roomId: this.runtime.agentId,
+                entityId: this.runtime.agentId,
+              });
+            }
+          }
+          break;
+        }
+
+        case 'markdown': {
+          // Split by document separator
+          const docs = data.split('\n\n---\n\n');
+          items = docs.map((doc, index) => {
+            const lines = doc.split('\n');
+            const title = lines[0].replace(/^#\s+/, '') || `Document ${index + 1}`;
+            const content = lines.slice(1).join('\n').trim();
+
+            return {
+              clientDocumentId: stringToUuid(this.runtime.agentId + title + Date.now()) as UUID,
+              content,
+              contentType: 'text/markdown',
+              originalFilename: `${title}.md`,
+              worldId: this.runtime.agentId,
+              roomId: this.runtime.agentId,
+              entityId: this.runtime.agentId,
+            };
+          });
+          break;
+        }
+
+        default:
+          throw new Error(`Unsupported import format: ${options.format}`);
+      }
+
+      // Validate if requested
+      if (options.validateBeforeImport) {
+        items = items.filter((item) => item.content && item.content.length > 0);
+      }
+
+      // Process import as batch operation
+      const batchOp: BatchKnowledgeOperation = {
+        operation: 'add',
+        items: items.map((data) => ({ data })),
+      };
+
+      return await this.batchOperation(batchOp);
+    } catch (error) {
+      logger.error('Error importing knowledge:', error);
+      throw error;
+    }
+  }
+
   // ADDED METHODS END
 }

@@ -4,7 +4,7 @@ import { KnowledgeService } from './service';
 import fs from 'node:fs'; // For file operations in upload
 import path from 'node:path'; // For path operations
 import multer from 'multer'; // For handling multipart uploads
-import { fetchUrlContent, normalizeS3Url } from './utils'; // Import utils functions
+import { fetchUrlContent, normalizeS3Url } from './utils.ts'; // Import utils functions
 
 // Create multer configuration function that uses runtime settings
 const createUploadMiddleware = (runtime: IAgentRuntime) => {
@@ -311,6 +311,102 @@ async function uploadKnowledgeHandler(req: any, res: any, runtime: IAgentRuntime
   }
 }
 
+// Update knowledge handler
+async function updateKnowledgeHandler(req: any, res: any, runtime: IAgentRuntime) {
+  const service = runtime.getService<KnowledgeService>(KnowledgeService.serviceType);
+  if (!service) {
+    return sendError(res, 500, 'SERVICE_NOT_FOUND', 'KnowledgeService not found');
+  }
+
+  const knowledgeId = req.params.knowledgeId;
+  if (!knowledgeId || knowledgeId.length < 36) {
+    return sendError(res, 400, 'INVALID_ID', 'Invalid Knowledge ID format');
+  }
+
+  try {
+    const agentId = (req.body.agentId as UUID) || (req.query.agentId as UUID);
+    if (!agentId) {
+      return sendError(res, 400, 'MISSING_AGENT_ID', 'Agent ID is required');
+    }
+
+    // Get the existing document
+    const existingDoc = await runtime.getMemoryById(knowledgeId as UUID);
+    if (!existingDoc) {
+      return sendError(res, 404, 'NOT_FOUND', 'Knowledge document not found');
+    }
+
+    // Check if this is a file upload or metadata update
+    const isFileUpdate = req.files && req.files.length > 0;
+    const isMetadataUpdate = req.body.metadata || req.body.title;
+
+    if (isFileUpdate) {
+      // Delete the old document and its fragments
+      await service.deleteMemory(knowledgeId as UUID);
+
+      // Process the new file as a replacement
+      const file = req.files[0] as MulterFile;
+      const fileBuffer = await fs.promises.readFile(file.path);
+      const base64Content = fileBuffer.toString('base64');
+
+      const addKnowledgeOpts: import('./types.ts').AddKnowledgeOptions = {
+        agentId: agentId,
+        clientDocumentId: knowledgeId as UUID, // Keep the same ID
+        contentType: file.mimetype,
+        originalFilename: file.originalname,
+        content: base64Content,
+        worldId: existingDoc.worldId || agentId,
+        roomId: existingDoc.roomId || agentId,
+        entityId: existingDoc.entityId || agentId,
+        metadata: {
+          ...(existingDoc.metadata || {}),
+          ...(req.body.metadata || {}),
+          updatedAt: new Date().toISOString(),
+          version: ((existingDoc.metadata as any)?.version || 0) + 1,
+        },
+      };
+
+      const result = await service.addKnowledge(addKnowledgeOpts);
+      cleanupFile(file.path);
+
+      sendSuccess(res, {
+        id: result.clientDocumentId,
+        message: 'Knowledge document updated successfully',
+        fragmentCount: result.fragmentCount,
+        version: ((existingDoc.metadata as any)?.version || 0) + 1,
+      });
+    } else if (isMetadataUpdate) {
+      // Update only metadata
+      const updatedMetadata = {
+        ...(existingDoc.metadata || {}),
+        ...(req.body.metadata || {}),
+        updatedAt: new Date().toISOString(),
+      };
+
+      if (req.body.title) {
+        updatedMetadata.title = req.body.title;
+      }
+
+      await runtime.updateMemory({
+        id: knowledgeId as UUID,
+        metadata: updatedMetadata,
+      });
+
+      sendSuccess(res, {
+        id: knowledgeId,
+        message: 'Knowledge metadata updated successfully',
+      });
+    } else {
+      return sendError(res, 400, 'INVALID_REQUEST', 'No update data provided');
+    }
+  } catch (error: any) {
+    logger.error('[KNOWLEDGE UPDATE HANDLER] Error updating knowledge:', error);
+    if (req.files) {
+      cleanupFiles(req.files as MulterFile[]);
+    }
+    sendError(res, 500, 'UPDATE_ERROR', 'Failed to update knowledge', error.message);
+  }
+}
+
 async function getKnowledgeDocumentsHandler(req: any, res: any, runtime: IAgentRuntime) {
   const service = runtime.getService<KnowledgeService>(KnowledgeService.serviceType);
   if (!service) {
@@ -518,7 +614,7 @@ async function knowledgePanelHandler(req: any, res: any, runtime: IAgentRuntime)
       // Fallback: serve a basic HTML page that loads the JS bundle from the assets folder
       // Use manifest.json to get the correct asset filenames if it exists
       let cssFile = 'index.css';
-      let jsFile = 'index.js';
+      let jsFile = 'index.ts';
 
       const manifestPath = path.join(currentDir, '../dist/manifest.json');
       if (fs.existsSync(manifestPath)) {
@@ -533,7 +629,7 @@ async function knowledgePanelHandler(req: any, res: any, runtime: IAgentRuntime)
               if (key.endsWith('.css') || (value as any).file?.endsWith('.css')) {
                 cssFile = (value as any).file || key;
               }
-              if (key.endsWith('.js') || (value as any).file?.endsWith('.js')) {
+              if (key.endsWith('.ts') || (value as any).file?.endsWith('.ts')) {
                 jsFile = (value as any).file || key;
               }
             }
@@ -617,7 +713,7 @@ async function frontendAssetHandler(req: any, res: any, runtime: IAgentRuntime) 
     if (fs.existsSync(assetPath)) {
       const fileStream = fs.createReadStream(assetPath);
       let contentType = 'application/octet-stream'; // Default
-      if (assetPath.endsWith('.js')) {
+      if (assetPath.endsWith('.ts')) {
         contentType = 'application/javascript';
       } else if (assetPath.endsWith('.css')) {
         contentType = 'text/css';
@@ -805,6 +901,197 @@ async function uploadKnowledgeWithMulter(req: any, res: any, runtime: IAgentRunt
   });
 }
 
+// Wrapper for update with multer
+async function updateKnowledgeWithMulter(req: any, res: any, runtime: IAgentRuntime) {
+  const upload = createUploadMiddleware(runtime);
+  const uploadSingle = upload.single('file');
+
+  // Apply multer middleware manually
+  uploadSingle(req, res, (err: any) => {
+    if (err) {
+      logger.error('[KNOWLEDGE UPDATE] Multer error:', err);
+      return sendError(res, 400, 'UPDATE_ERROR', err.message);
+    }
+    // If multer succeeded or no file, call the actual handler
+    updateKnowledgeHandler(req, res, runtime);
+  });
+}
+
+// Bulk delete handler
+async function bulkDeleteKnowledgeHandler(req: any, res: any, runtime: IAgentRuntime) {
+  const service = runtime.getService<KnowledgeService>(KnowledgeService.serviceType);
+  if (!service) {
+    return sendError(res, 500, 'SERVICE_NOT_FOUND', 'KnowledgeService not found');
+  }
+
+  try {
+    const { knowledgeIds } = req.body;
+    const agentId = (req.body.agentId as UUID) || (req.query.agentId as UUID);
+
+    if (!agentId) {
+      return sendError(res, 400, 'MISSING_AGENT_ID', 'Agent ID is required');
+    }
+
+    if (!Array.isArray(knowledgeIds) || knowledgeIds.length === 0) {
+      return sendError(res, 400, 'INVALID_REQUEST', 'knowledgeIds must be a non-empty array');
+    }
+
+    const results = await Promise.all(
+      knowledgeIds.map(async (knowledgeId: string) => {
+        try {
+          const typedKnowledgeId = knowledgeId as UUID;
+          await service.deleteMemory(typedKnowledgeId);
+          return { id: knowledgeId, success: true };
+        } catch (error: any) {
+          logger.error(`Failed to delete knowledge ${knowledgeId}:`, error);
+          return { id: knowledgeId, success: false, error: error.message };
+        }
+      })
+    );
+
+    const successCount = results.filter((r) => r.success).length;
+    const failCount = results.filter((r) => !r.success).length;
+
+    sendSuccess(res, {
+      results,
+      summary: {
+        requested: knowledgeIds.length,
+        successful: successCount,
+        failed: failCount,
+      },
+    });
+  } catch (error: any) {
+    logger.error('[KNOWLEDGE BULK DELETE] Error:', error);
+    sendError(res, 500, 'BULK_DELETE_ERROR', 'Failed to delete knowledge documents', error.message);
+  }
+}
+
+// Add advanced search route
+async function advancedSearchHandler(req: any, res: any, runtime: IAgentRuntime) {
+  try {
+    const { agentId } = req.params;
+    if (!runtime || runtime.agentId !== agentId) {
+      return res.status(404).json({ error: 'Agent not found' });
+    }
+
+    const service = runtime.getService<KnowledgeService>('knowledge');
+    if (!service) {
+      return res.status(404).json({ error: 'Knowledge service not available' });
+    }
+
+    const searchOptions = req.body;
+    const results = await service.advancedSearch(searchOptions);
+
+    res.json(results);
+  } catch (error: any) {
+    logger.error('Error in advanced search:', error);
+    res.status(500).json({ error: error.message || 'Failed to perform advanced search' });
+  }
+}
+
+// Add analytics route
+async function getAnalyticsHandler(req: any, res: any, runtime: IAgentRuntime) {
+  try {
+    const { agentId } = req.params;
+    if (!runtime || runtime.agentId !== agentId) {
+      return res.status(404).json({ error: 'Agent not found' });
+    }
+
+    const service = runtime.getService<KnowledgeService>('knowledge');
+    if (!service) {
+      return res.status(404).json({ error: 'Knowledge service not available' });
+    }
+
+    const analytics = await service.getAnalytics();
+    res.json(analytics);
+  } catch (error: any) {
+    logger.error('Error getting analytics:', error);
+    res.status(500).json({ error: error.message || 'Failed to get analytics' });
+  }
+}
+
+// Add batch operations route
+async function batchOperationHandler(req: any, res: any, runtime: IAgentRuntime) {
+  try {
+    const { agentId } = req.params;
+    if (!runtime || runtime.agentId !== agentId) {
+      return res.status(404).json({ error: 'Agent not found' });
+    }
+
+    const service = runtime.getService<KnowledgeService>('knowledge');
+    if (!service) {
+      return res.status(404).json({ error: 'Knowledge service not available' });
+    }
+
+    const batchOperation = req.body;
+    const result = await service.batchOperation(batchOperation);
+
+    res.json(result);
+  } catch (error: any) {
+    logger.error('Error in batch operation:', error);
+    res.status(500).json({ error: error.message || 'Batch operation failed' });
+  }
+}
+
+// Add export route
+async function exportKnowledgeHandler(req: any, res: any, runtime: IAgentRuntime) {
+  try {
+    const { agentId } = req.params;
+    if (!runtime || runtime.agentId !== agentId) {
+      return res.status(404).json({ error: 'Agent not found' });
+    }
+
+    const service = runtime.getService<KnowledgeService>('knowledge');
+    if (!service) {
+      return res.status(404).json({ error: 'Knowledge service not available' });
+    }
+
+    const exportOptions = req.body;
+    const exportData = await service.exportKnowledge(exportOptions);
+
+    // Set appropriate content type based on format
+    const format = exportOptions.format || 'json';
+    const contentTypes: Record<string, string> = {
+      json: 'application/json',
+      csv: 'text/csv',
+      markdown: 'text/markdown',
+    };
+
+    res.setHeader('Content-Type', contentTypes[format] || 'text/plain');
+    res.setHeader('Content-Disposition', `attachment; filename="knowledge-export.${format}"`);
+    res.send(exportData);
+  } catch (error: any) {
+    logger.error('Error exporting knowledge:', error);
+    res.status(500).json({ error: error.message || 'Export failed' });
+  }
+}
+
+// Add import route
+async function importKnowledgeHandler(req: any, res: any, runtime: IAgentRuntime) {
+  try {
+    const { agentId } = req.params;
+    if (!runtime || runtime.agentId !== agentId) {
+      return res.status(404).json({ error: 'Agent not found' });
+    }
+
+    const service = runtime.getService<KnowledgeService>('knowledge');
+    if (!service) {
+      return res.status(404).json({ error: 'Knowledge service not available' });
+    }
+
+    const { data, options } = req.body;
+    if (!data || !options || !options.format) {
+      return res.status(400).json({ error: 'Missing data or import options' });
+    }
+
+    const result = await service.importKnowledge(data, options);
+    res.json(result);
+  } catch (error: any) {
+    logger.error('Error importing knowledge:', error);
+    res.status(500).json({ error: error.message || 'Import failed' });
+  }
+}
+
 export const knowledgeRoutes: Route[] = [
   {
     type: 'GET',
@@ -822,6 +1109,16 @@ export const knowledgeRoutes: Route[] = [
     type: 'POST',
     path: '/documents',
     handler: uploadKnowledgeWithMulter,
+  },
+  {
+    type: 'PUT',
+    path: '/documents/:knowledgeId',
+    handler: updateKnowledgeWithMulter,
+  },
+  {
+    type: 'POST',
+    path: '/documents/bulk-delete',
+    handler: bulkDeleteKnowledgeHandler,
   },
   {
     type: 'GET',
@@ -847,5 +1144,56 @@ export const knowledgeRoutes: Route[] = [
     type: 'GET',
     path: '/search',
     handler: searchKnowledgeHandler,
+  },
+  {
+    type: 'GET',
+    path: '/test-components',
+    handler: async (req: any, res: any, runtime: IAgentRuntime) => {
+      const currentDir = path.dirname(new URL(import.meta.url).pathname);
+      // Try multiple locations for the test-components.html file
+      const possiblePaths = [
+        path.join(currentDir, 'frontend', 'test-components.html'),
+        path.join(currentDir, '..', 'src', 'frontend', 'test-components.html'),
+        path.join(currentDir, '..', '..', 'src', 'frontend', 'test-components.html'),
+      ];
+
+      for (const testPagePath of possiblePaths) {
+        try {
+          const htmlContent = await fs.promises.readFile(testPagePath, 'utf8');
+          res.writeHead(200, { 'Content-Type': 'text/html' });
+          res.end(htmlContent);
+          return;
+        } catch (error) {
+          // Try next path
+        }
+      }
+
+      sendError(res, 404, 'NOT_FOUND', 'Test components page not found');
+    },
+  },
+  {
+    type: 'POST',
+    path: '/search/advanced',
+    handler: advancedSearchHandler,
+  },
+  {
+    type: 'GET',
+    path: '/analytics',
+    handler: getAnalyticsHandler,
+  },
+  {
+    type: 'POST',
+    path: '/batch',
+    handler: batchOperationHandler,
+  },
+  {
+    type: 'POST',
+    path: '/export',
+    handler: exportKnowledgeHandler,
+  },
+  {
+    type: 'POST',
+    path: '/import',
+    handler: importKnowledgeHandler,
   },
 ];

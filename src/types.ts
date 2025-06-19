@@ -1,4 +1,4 @@
-import { UUID } from '@elizaos/core';
+import { UUID, KnowledgeItem } from '@elizaos/core';
 import z from 'zod';
 
 // Schema for validating model configuration
@@ -139,6 +139,121 @@ export const KnowledgeServiceType = {
   KNOWLEDGE: 'knowledge' as const,
 } satisfies Partial<import('@elizaos/core').ServiceTypeRegistry>;
 
+/**
+ * Document represents a stored knowledge document
+ */
+export interface Document {
+  id: UUID;
+  agentId: UUID;
+  worldId: UUID;
+  roomId: UUID;
+  entityId: UUID;
+  originalFilename: string;
+  contentType: string;
+  content: string; // Base64 for PDFs, plain text for others
+  fileSize: number;
+  title?: string;
+  sourceUrl?: string;
+  createdAt: Date;
+  updatedAt: Date;
+  metadata?: Record<string, unknown>;
+}
+
+/**
+ * KnowledgeFragment represents a chunk of a document with its embedding
+ */
+export interface KnowledgeFragment {
+  id: UUID;
+  documentId: UUID;
+  agentId: UUID;
+  worldId: UUID;
+  roomId: UUID;
+  entityId: UUID;
+  content: string;
+  embedding?: number[];
+  position: number;
+  createdAt: Date;
+  metadata?: Record<string, unknown>;
+}
+
+/**
+ * Input type for creating a new document
+ */
+export interface DocumentCreateInput {
+  id: UUID;
+  agentId: UUID;
+  worldId?: UUID;
+  roomId?: UUID;
+  entityId?: UUID;
+  originalFilename: string;
+  contentType: string;
+  content: string;
+  fileSize: number;
+  title?: string;
+  sourceUrl?: string;
+  metadata?: Record<string, unknown>;
+}
+
+/**
+ * Input type for creating a new fragment
+ */
+export interface FragmentCreateInput {
+  id: UUID;
+  documentId: UUID;
+  agentId: UUID;
+  worldId?: UUID;
+  roomId?: UUID;
+  entityId?: UUID;
+  content: string;
+  embedding?: number[];
+  position: number;
+  metadata?: Record<string, unknown>;
+}
+
+/**
+ * Conversion utilities for backward compatibility
+ */
+export function documentToKnowledgeItem(doc: Document): KnowledgeItem {
+  return {
+    id: doc.id,
+    content: {
+      text: doc.content,
+    },
+    metadata: {
+      type: 'document' as const,
+      ...(doc.metadata || {}),
+      originalFilename: doc.originalFilename,
+      contentType: doc.contentType,
+      fileSize: doc.fileSize,
+      title: doc.title,
+      sourceUrl: doc.sourceUrl,
+    },
+  };
+}
+
+export function knowledgeItemToDocument(
+  item: KnowledgeItem,
+  agentId: UUID,
+  worldId: UUID,
+  roomId: UUID,
+  entityId: UUID
+): Omit<Document, 'id' | 'createdAt' | 'updatedAt'> {
+  const metadata = item.metadata || {};
+  return {
+    agentId,
+    worldId,
+    roomId,
+    entityId,
+    originalFilename: (metadata as any).originalFilename || 'unknown',
+    contentType: (metadata as any).contentType || 'text/plain',
+    content: item.content.text || '',
+    fileSize: (metadata as any).fileSize || 0,
+    title: (metadata as any).title as string | undefined,
+    sourceUrl: (metadata as any).sourceUrl as string | undefined,
+    metadata: metadata,
+  };
+}
+
 export interface KnowledgeDocumentMetadata extends Record<string, any> {
   type: string; // e.g., 'document', 'website_content'
   source: string; // e.g., 'upload', 'web_scrape', path to file
@@ -162,6 +277,10 @@ export interface KnowledgeConfig {
   TEXT_PROVIDER?: string;
   TEXT_EMBEDDING_MODEL?: string;
   // Add any other plugin-specific configurations
+  SEARCH_MATCH_THRESHOLD?: number;
+  SEARCH_RESULT_COUNT?: number;
+  ENABLE_VERSIONING?: boolean;
+  ENABLE_ANALYTICS?: boolean;
 }
 
 export interface LoadResult {
@@ -189,4 +308,106 @@ export interface ExtendedMemoryMetadata extends Record<string, any> {
   position?: number; // For fragments
   originalFilename?: string;
   url?: string; // For web content
+}
+
+// Advanced search options
+export interface KnowledgeSearchOptions {
+  query: string;
+  filters?: {
+    contentType?: string[];
+    dateRange?: {
+      start?: Date;
+      end?: Date;
+    };
+    tags?: string[];
+    source?: string[];
+    minSimilarity?: number;
+  };
+  sort?: {
+    field: 'similarity' | 'createdAt' | 'updatedAt' | 'title';
+    order: 'asc' | 'desc';
+  };
+  limit?: number;
+  offset?: number;
+  includeMetadata?: boolean;
+  includeFragments?: boolean;
+}
+
+// Batch operation types
+export interface BatchKnowledgeOperation {
+  operation: 'add' | 'update' | 'delete';
+  items: Array<{
+    id?: string;
+    data?: AddKnowledgeOptions;
+    metadata?: Record<string, any>;
+  }>;
+}
+
+export interface BatchOperationResult {
+  successful: number;
+  failed: number;
+  results: Array<{
+    id: string;
+    success: boolean;
+    error?: string;
+    result?: any;
+  }>;
+}
+
+// Knowledge analytics types
+export interface KnowledgeAnalytics {
+  totalDocuments: number;
+  totalFragments: number;
+  storageSize: number;
+  contentTypes: Record<string, number>;
+  queryStats: {
+    totalQueries: number;
+    averageResponseTime: number;
+    topQueries: Array<{ query: string; count: number }>;
+  };
+  usageByDate: Array<{
+    date: string;
+    queries: number;
+    documents: number;
+  }>;
+}
+
+// Knowledge versioning types
+export interface KnowledgeVersion {
+  id: UUID;
+  documentId: UUID;
+  version: number;
+  content: string;
+  metadata: Record<string, any>;
+  createdAt: Date;
+  createdBy: UUID;
+  changeDescription?: string;
+}
+
+// Export/Import types
+export interface KnowledgeExportOptions {
+  format: 'json' | 'csv' | 'markdown';
+  includeMetadata?: boolean;
+  includeFragments?: boolean;
+  documentIds?: UUID[];
+  dateRange?: {
+    start?: Date;
+    end?: Date;
+  };
+}
+
+export interface KnowledgeImportOptions {
+  format: 'json' | 'csv' | 'markdown';
+  overwriteExisting?: boolean;
+  validateBeforeImport?: boolean;
+  batchSize?: number;
+}
+
+// Knowledge relationship types
+export interface KnowledgeRelationship {
+  sourceId: UUID;
+  targetId: UUID;
+  type: 'references' | 'related_to' | 'derived_from' | 'contradicts' | 'supports';
+  strength: number;
+  metadata?: Record<string, any>;
 }

@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { looksLikeBase64 } from '../src/utils';
+import { looksLikeBase64 } from '../../utils';
 
 describe('looksLikeBase64', () => {
   it('should return true for valid base64 strings', () => {
@@ -28,4 +28,4 @@ describe('looksLikeBase64', () => {
     expect(looksLikeBase64(undefined)).toBe(false);
     expect(looksLikeBase64('')).toBe(false);
   });
-}); 
+});

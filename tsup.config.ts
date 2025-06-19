@@ -15,6 +15,7 @@ export default defineConfig({
     'https',
     'http',
     '@elizaos/core',
+    '@elizaos/plugin-sql',
     'zod',
   ],
 });
