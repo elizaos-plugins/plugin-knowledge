@@ -611,16 +611,39 @@ export function KnowledgeTab({ agentId }: { agentId: UUID }) {
 
     const KnowledgeCard = ({ memory, index }: { memory: Memory; index: number }) => {
         const metadata = (memory.metadata as MemoryMetadata) || {};
-        const title = metadata.title || memory.id || 'Unknown Document';
-        const filename = metadata.filename || 'Unknown Document';
-        const fileExt = metadata.fileExt || filename.split('.').pop()?.toLowerCase() || '';
-        const displayName = title || filename;
-        const subtitle = metadata.path || filename;
+        
+        // Try to get a meaningful name from various metadata fields
+        const getDocumentName = () => {
+            if (metadata.title) return metadata.title;
+            if (metadata.filename) return metadata.filename;
+            if (metadata.originalFilename) return metadata.originalFilename;
+            if (metadata.path) return metadata.path.split('/').pop() || metadata.path;
+            if (memory.id) return `Document ${memory.id.substring(0, 8)}`;
+            return `Document ${index + 1}`;
+        };
+        
+        const getFileExtension = () => {
+            if (metadata.fileExt) return metadata.fileExt.toLowerCase();
+            const filename = metadata.filename || metadata.originalFilename || metadata.path || '';
+            return filename.split('.').pop()?.toLowerCase() || 'doc';
+        };
+        
+        const getSubtitle = () => {
+            if (metadata.path) return metadata.path;
+            if (metadata.filename) return metadata.filename;
+            if (metadata.originalFilename) return metadata.originalFilename;
+            if (metadata.source) return `Source: ${metadata.source}`;
+            return 'Knowledge Document';
+        };
+        
+        const displayName = getDocumentName();
+        const subtitle = getSubtitle();
+        const fileExt = getFileExtension();
 
         return (
             <button key={memory.id || index} type="button" className="w-full text-left" onClick={() => setViewingContent(memory)}>
                 <Card className="hover:bg-accent/10 transition-colors relative group">
-                    <div className="absolute top-3 left-3 opacity-70">{getFileIcon(filename)}</div>
+                    <div className="absolute top-3 left-3 opacity-70">{getFileIcon(displayName)}</div>
                     <CardHeader className="p-3 pb-2 pl-10">
                         <div className="text-xs text-muted-foreground mb-1 line-clamp-1">{subtitle}</div>
                         <div className="mb-2">
@@ -641,7 +664,7 @@ export function KnowledgeTab({ agentId }: { agentId: UUID }) {
                                 </span>
                             </div>
                             <div className="flex items-center gap-2">
-                                <Badge variant="outline" className="px-1.5 py-0 h-5">{fileExt || 'unknown document'}</Badge>
+                                <Badge variant="outline" className="px-1.5 py-0 h-5">{fileExt || 'doc'}</Badge>
                                 {memory.id && (
                                     <Button variant="ghost" size="icon" className="size-6 opacity-0 group-hover:opacity-100 transition-opacity" onClick={(e) => {
                                         if (e) {
@@ -1025,26 +1048,33 @@ export function KnowledgeTab({ agentId }: { agentId: UUID }) {
                                     {searchResults.map((result, index) => (
                                         <div
                                             key={result.id || index}
-                                            className="border border-border rounded-md p-3 bg-card hover:bg-accent/10 transition-colors"
+                                            className="border border-border rounded-md p-3 bg-card hover:bg-accent/10 transition-colors cursor-pointer"
+                                            onClick={() => setViewingContent(result)}
                                         >
                                             <div className="flex items-start justify-between mb-2">
                                                 <div className="flex items-center gap-2">
                                                     <Badge variant="outline" className="text-xs">
                                                         {(result.similarity * 100).toFixed(1)}% match
                                                     </Badge>
-                                                    <span className="text-xs text-muted-foreground">
-                                                        {result.metadata?.documentFilename || 'Unknown Document'}
-                                                    </span>
                                                 </div>
                                             </div>
-                                            <p className="text-sm line-clamp-3">
+                                            <p className="text-sm line-clamp-4 mb-2">
                                                 {result.content?.text || 'No content'}
                                             </p>
-                                            {result.metadata?.position !== undefined && (
-                                                <div className="text-xs text-muted-foreground mt-1">
-                                                    Fragment position: {result.metadata.position}
+                                            <div className="flex items-center justify-between">
+                                                <div className="flex items-center gap-3 text-xs text-muted-foreground">
+                                                    {result.metadata?.position !== undefined && (
+                                                        <span>Fragment #{result.metadata.position}</span>
+                                                    )}
                                                 </div>
-                                            )}
+                                                <div className="flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground transition-colors">
+                                                    <svg xmlns="http://www.w3.org/2000/svg" className="h-3 w-3" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                                                        <path d="M2 3h6a4 4 0 0 1 4 4v14a3 3 0 0 0-3-3H2z"/>
+                                                        <path d="M22 3h-6a4 4 0 0 0-4 4v14a3 3 0 0 1 3-3h7z"/>
+                                                    </svg>
+                                                    <span>Read more</span>
+                                                </div>
+                                            </div>
                                         </div>
                                     ))}
                                 </div>

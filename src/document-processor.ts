@@ -20,15 +20,53 @@ import {
   getContextualizationPrompt,
   getPromptForMimeType,
 } from './ctx-embeddings.ts';
+import { generateText } from './llm.ts';
 import { convertPdfToTextFromBuffer, extractTextFromFileBuffer } from './utils.ts';
 
 // Read contextual Knowledge settings from environment variables
 const ctxKnowledgeEnabled =
   process.env.CTX_KNOWLEDGE_ENABLED === 'true' || process.env.CTX_KNOWLEDGE_ENABLED === 'True';
 
+/**
+ * Check if custom LLM should be used based on environment variables
+ * Custom LLM is enabled when all three key variables are set:
+ * - TEXT_PROVIDER
+ * - TEXT_MODEL  
+ * - OPENROUTER_API_KEY (or provider-specific API key)
+ */
+function shouldUseCustomLLM(): boolean {
+  const textProvider = process.env.TEXT_PROVIDER;
+  const textModel = process.env.TEXT_MODEL;
+  
+  if (!textProvider || !textModel) {
+    return false;
+  }
+  
+  // Check for provider-specific API keys
+  switch (textProvider.toLowerCase()) {
+    case 'openrouter':
+      return !!process.env.OPENROUTER_API_KEY;
+    case 'openai':
+      return !!process.env.OPENAI_API_KEY;
+    case 'anthropic':
+      return !!process.env.ANTHROPIC_API_KEY;
+    case 'google':
+      return !!process.env.GOOGLE_API_KEY;
+    default:
+      return false;
+  }
+}
+
+const useCustomLLM = shouldUseCustomLLM();
+
 // Log settings at startup
 if (ctxKnowledgeEnabled) {
   logger.info(`Document processor starting with Contextual Knowledge ENABLED`);
+  if (useCustomLLM) {
+    logger.info(`Using Custom LLM with provider: ${process.env.TEXT_PROVIDER}, model: ${process.env.TEXT_MODEL}`);
+  } else {
+    logger.info(`Using ElizaOS Runtime LLM (default behavior)`);
+  }
 } else {
   logger.info(`Document processor starting with Contextual Knowledge DISABLED`);
 }
@@ -392,8 +430,31 @@ async function generateEmbeddingsForChunks(
   }>,
   rateLimiter: () => Promise<void>
 ): Promise<Array<any>> {
+  // Filter out failed chunks
+  const validChunks = contextualizedChunks.filter(chunk => chunk.success);
+  const failedChunks = contextualizedChunks.filter(chunk => !chunk.success);
+
+  if (validChunks.length === 0) {
+    return failedChunks.map(chunk => ({
+      success: false,
+      index: chunk.index,
+      error: new Error('Chunk processing failed'),
+      text: chunk.contextualizedText,
+    }));
+  }
+
+  // Always use individual processing with ElizaOS runtime (keeping embeddings simple)
   return await Promise.all(
     contextualizedChunks.map(async (contextualizedChunk) => {
+      if (!contextualizedChunk.success) {
+        return {
+          success: false,
+          index: contextualizedChunk.index,
+          error: new Error('Chunk processing failed'),
+          text: contextualizedChunk.contextualizedText,
+        };
+      }
+
       // Apply rate limiting before embedding generation
       await rateLimiter();
 
@@ -530,21 +591,38 @@ async function generateContextsInBatch(
         let llmResponse;
 
         const generateTextOperation = async () => {
-          if (item.usesCaching) {
-            // Use the newer caching approach with separate document
-            // TODO: Re-evaluate how to pass cacheDocument and cacheOptions to runtime.useModel
-            // For now, runtime.useModel will be called without these specific caching params.
-            return await runtime.useModel(ModelType.TEXT_LARGE, {
-              prompt: item.promptText!,
-              system: item.systemPrompt,
-              // cacheDocument: item.fullDocumentTextForContext, // Not directly supported by useModel
-              // cacheOptions: { type: 'ephemeral' }, // Not directly supported by useModel
-            });
+          if (useCustomLLM) {
+            // Use custom LLM with caching support
+            if (item.usesCaching) {
+              // Use the newer caching approach with separate document
+              return await generateText(
+                item.promptText!,
+                item.systemPrompt,
+                {
+                  cacheDocument: item.fullDocumentTextForContext,
+                  cacheOptions: { type: 'ephemeral' },
+                  autoCacheContextualRetrieval: true,
+                }
+              );
+            } else {
+              // Original approach - document embedded in prompt
+              return await generateText(item.prompt!);
+            }
           } else {
-            // Original approach - document embedded in prompt
-            return await runtime.useModel(ModelType.TEXT_LARGE, {
-              prompt: item.prompt!,
-            });
+            // Fall back to runtime.useModel (original behavior)
+            if (item.usesCaching) {
+              // Use the newer caching approach with separate document
+              // Note: runtime.useModel doesn't support cacheDocument/cacheOptions
+              return await runtime.useModel(ModelType.TEXT_LARGE, {
+                prompt: item.promptText!,
+                system: item.systemPrompt,
+              });
+            } else {
+              // Original approach - document embedded in prompt
+              return await runtime.useModel(ModelType.TEXT_LARGE, {
+                prompt: item.prompt!,
+              });
+            }
           }
         };
 
@@ -681,21 +759,19 @@ async function generateEmbeddingWithValidation(
   error?: any;
 }> {
   try {
-    // const embeddingResult = await generateTextEmbedding(text); // OLD
+    // Always use ElizaOS runtime for embeddings (keep it simple as requested)
     const embeddingResult = await runtime.useModel(ModelType.TEXT_EMBEDDING, {
       text,
-    }); // NEW
-
+    });
+    
     // Handle different embedding result formats consistently
-    // Assuming useModel for TEXT_EMBEDDING returns { embedding: number[] } or number[] directly
-    // Adjust based on actual return type of useModel for TEXT_EMBEDDING
     const embedding = Array.isArray(embeddingResult)
       ? embeddingResult
       : (embeddingResult as { embedding: number[] })?.embedding;
 
     // Validate embedding
     if (!embedding || embedding.length === 0) {
-      logger.warn(`Zero vector detected. Embedding result: ${JSON.stringify(embeddingResult)}`);
+      logger.warn(`Zero vector detected. Embedding result: ${JSON.stringify(embedding)}`);
       return {
         embedding: null,
         success: false,

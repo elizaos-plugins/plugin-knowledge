@@ -51,9 +51,14 @@ export class KnowledgeService extends Service {
       return false; // Default to false if undefined or other type
     };
 
+    // Only enable LOAD_DOCS_ON_STARTUP if explicitly set to true
+    const loadDocsOnStartup = 
+      parseBooleanEnv(config?.LOAD_DOCS_ON_STARTUP) || 
+      process.env.LOAD_DOCS_ON_STARTUP === 'true';
+
     this.knowledgeConfig = {
       CTX_KNOWLEDGE_ENABLED: parseBooleanEnv(config?.CTX_KNOWLEDGE_ENABLED),
-      LOAD_DOCS_ON_STARTUP: parseBooleanEnv(config?.LOAD_DOCS_ON_STARTUP),
+      LOAD_DOCS_ON_STARTUP: loadDocsOnStartup,
       MAX_INPUT_TOKENS: config?.MAX_INPUT_TOKENS,
       MAX_OUTPUT_TOKENS: config?.MAX_OUTPUT_TOKENS,
       EMBEDDING_PROVIDER: config?.EMBEDDING_PROVIDER,
@@ -70,9 +75,12 @@ export class KnowledgeService extends Service {
     );
 
     if (this.knowledgeConfig.LOAD_DOCS_ON_STARTUP) {
+      logger.info('LOAD_DOCS_ON_STARTUP is enabled. Loading documents from docs folder...');
       this.loadInitialDocuments().catch((error) => {
         logger.error('Error during initial document loading in KnowledgeService:', error);
       });
+    } else {
+      logger.info('LOAD_DOCS_ON_STARTUP is disabled. Skipping automatic document loading.');
     }
   }
 

@@ -39,9 +39,19 @@ const processGraphData = (memories: Memory[]) => {
             return;
         }
         
+        // Get a meaningful name for the node
+        const getNodeName = () => {
+            if (metadata.title) return metadata.title;
+            if (metadata.filename) return metadata.filename;
+            if (metadata.originalFilename) return metadata.originalFilename;
+            if (metadata.path) return metadata.path.split('/').pop() || metadata.path;
+            const nodeType = (metadata.type || '').toLowerCase() === 'document' ? 'Doc' : 'Fragment';
+            return `${nodeType} ${memory.id.substring(0, 8)}`;
+        };
+
         const memoryNode: MemoryNode = {
             id: memory.id,
-            name: metadata.title || memory.id.substring(0, 8),
+            name: getNodeName(),
             memory: memory,
             val: 3, // Reduced base node size
             type: (metadata.type || '').toLowerCase() === 'document' ? 'document' : 'fragment'

@@ -30,16 +30,18 @@ export function validateModelConfig(runtime?: IAgentRuntime): ModelConfig {
       const openaiEmbeddingModel = getSetting('OPENAI_EMBEDDING_MODEL');
 
       if (openaiApiKey && openaiEmbeddingModel) {
-        logger.info('EMBEDDING_PROVIDER not specified, using configuration from plugin-openai');
+        logger.debug('EMBEDDING_PROVIDER not specified, using configuration from plugin-openai');
       } else {
-        logger.warn(
-          'EMBEDDING_PROVIDER not specified, but plugin-openai configuration incomplete. Check OPENAI_API_KEY and OPENAI_EMBEDDING_MODEL.'
+        logger.debug(
+          'EMBEDDING_PROVIDER not specified. Assuming embeddings are provided by another plugin (e.g., plugin-google-genai).'
         );
       }
     }
 
-    // Set embedding provider defaults based on plugin-openai if EMBEDDING_PROVIDER is not set
-    const finalEmbeddingProvider = embeddingProvider || 'openai';
+    // Only set embedding provider if explicitly configured
+    // If not set, let the runtime handle embeddings (e.g., plugin-google-genai)
+    const finalEmbeddingProvider = embeddingProvider;
+
     const textEmbeddingModel =
       getSetting('TEXT_EMBEDDING_MODEL') ||
       getSetting('OPENAI_EMBEDDING_MODEL') ||
@@ -95,28 +97,31 @@ export function validateModelConfig(runtime?: IAgentRuntime): ModelConfig {
  * @throws Error if a required configuration value is missing
  */
 function validateConfigRequirements(config: ModelConfig, assumePluginOpenAI: boolean): void {
-  // Skip validation for embedding provider if we're using plugin-openai's configuration
-  if (!assumePluginOpenAI) {
-    // Only validate embedding provider if not using plugin-openai
-    if (config.EMBEDDING_PROVIDER === 'openai' && !config.OPENAI_API_KEY) {
-      throw new Error('OPENAI_API_KEY is required when EMBEDDING_PROVIDER is set to "openai"');
-    }
-    if (config.EMBEDDING_PROVIDER === 'google' && !config.GOOGLE_API_KEY) {
-      throw new Error('GOOGLE_API_KEY is required when EMBEDDING_PROVIDER is set to "google"');
-    }
-  } else {
-    // If we're assuming plugin-openai, make sure we have the required values
-    if (!config.OPENAI_API_KEY) {
-      throw new Error('OPENAI_API_KEY is required when using plugin-openai configuration');
-    }
-    if (!config.TEXT_EMBEDDING_MODEL) {
-      throw new Error('OPENAI_EMBEDDING_MODEL is required when using plugin-openai configuration');
-    }
+  // Only validate embedding requirements if EMBEDDING_PROVIDER is explicitly set
+  const embeddingProvider = config.EMBEDDING_PROVIDER;
+
+  // If EMBEDDING_PROVIDER is explicitly set, validate its requirements
+  if (embeddingProvider === 'openai' && !config.OPENAI_API_KEY) {
+    throw new Error('OPENAI_API_KEY is required when EMBEDDING_PROVIDER is set to "openai"');
+  }
+  if (embeddingProvider === 'google' && !config.GOOGLE_API_KEY) {
+    throw new Error('GOOGLE_API_KEY is required when EMBEDDING_PROVIDER is set to "google"');
+  }
+
+  // If no embedding provider is set, skip validation - let runtime handle it
+  if (!embeddingProvider) {
+    logger.debug('No EMBEDDING_PROVIDER specified. Embeddings will be handled by the runtime.');
+  }
+
+  // If we're assuming plugin-openai AND user has OpenAI configuration, validate it
+  // But don't fail if they're using a different embedding provider (e.g. google-genai)
+  if (assumePluginOpenAI && config.OPENAI_API_KEY && !config.TEXT_EMBEDDING_MODEL) {
+    throw new Error('OPENAI_EMBEDDING_MODEL is required when using plugin-openai configuration');
   }
 
   // If Contextual Knowledge is enabled, we need additional validations
   if (config.CTX_KNOWLEDGE_ENABLED) {
-    logger.info('Contextual Knowledge is enabled. Validating text generation settings...');
+    logger.debug('Contextual Knowledge is enabled. Validating text generation settings...');
 
     // Validate API keys based on the text provider
     if (config.TEXT_PROVIDER === 'openai' && !config.OPENAI_API_KEY) {
@@ -136,7 +141,7 @@ function validateConfigRequirements(config: ModelConfig, assumePluginOpenAI: boo
     if (config.TEXT_PROVIDER === 'openrouter') {
       const modelName = config.TEXT_MODEL?.toLowerCase() || '';
       if (modelName.includes('claude') || modelName.includes('gemini')) {
-        logger.info(
+        logger.debug(
           `Using ${modelName} with OpenRouter. This configuration supports document caching for improved performance.`
         );
       }
@@ -144,11 +149,11 @@ function validateConfigRequirements(config: ModelConfig, assumePluginOpenAI: boo
   } else {
     // Log appropriate message based on where embedding config came from
     if (assumePluginOpenAI) {
-      logger.info(
-        'Contextual Knowledge is disabled. Using embedding configuration from plugin-openai.'
+      logger.debug(
+        'Contextual Knowledge is disabled. Embeddings will be handled by the runtime (e.g., plugin-openai, plugin-google-genai).'
       );
     } else {
-      logger.info('Contextual Knowledge is disabled. Using basic embedding-only configuration.');
+      logger.debug('Contextual Knowledge is disabled. Using configured embedding provider.');
     }
   }
 }

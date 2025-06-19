@@ -63,11 +63,12 @@ export const knowledgePlugin: Plugin = {
       if (runtime) {
         logger.info(`Knowledge Plugin initialized for agent: ${runtime.agentId}`);
 
-        // Check if docs should be loaded on startup
+        // Check if docs should be loaded on startup (only when explicitly enabled)
         const loadDocsOnStartup =
-          config.LOAD_DOCS_ON_STARTUP !== 'false' && process.env.LOAD_DOCS_ON_STARTUP !== 'false';
+          config.LOAD_DOCS_ON_STARTUP === 'true' || process.env.LOAD_DOCS_ON_STARTUP === 'true';
 
         if (loadDocsOnStartup) {
+          logger.info('LOAD_DOCS_ON_STARTUP is enabled. Scheduling document loading...');
           // Schedule document loading after service initialization
           setTimeout(async () => {
             try {
@@ -83,6 +84,8 @@ export const knowledgePlugin: Plugin = {
               logger.error('Error loading documents on startup:', error);
             }
           }, 5000); // Delay to ensure services are fully initialized
+        } else {
+          logger.info('LOAD_DOCS_ON_STARTUP is not enabled. Skipping automatic document loading.');
         }
       }
 

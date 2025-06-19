@@ -7,7 +7,7 @@ export const ModelConfigSchema = z.object({
   // NOTE: If EMBEDDING_PROVIDER is not specified, the plugin automatically assumes
   // plugin-openai is being used and will use OPENAI_EMBEDDING_MODEL and
   // OPENAI_EMBEDDING_DIMENSIONS for configuration
-  EMBEDDING_PROVIDER: z.enum(['openai', 'google']),
+  EMBEDDING_PROVIDER: z.enum(['openai', 'google']).optional(),
   TEXT_PROVIDER: z.enum(['openai', 'anthropic', 'openrouter', 'google']).optional(),
 
   // API keys
