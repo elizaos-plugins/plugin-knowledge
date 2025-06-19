@@ -312,7 +312,12 @@ const apiClient = {
     return await response.json();
   },
 
-  searchKnowledge: async (agentId: UUID, query: string, threshold: number = 0.5, limit: number = 20) => {
+  searchKnowledge: async (
+    agentId: UUID,
+    query: string,
+    threshold: number = 0.5,
+    limit: number = 20
+  ) => {
     const params = new URLSearchParams();
     params.append('agentId', agentId);
     params.append('q', query);
@@ -709,7 +714,9 @@ export function KnowledgeTab({ agentId }: { agentId: UUID }) {
       setSearchResults(result.data.results || []);
 
       if (result.data.results.length === 0) {
-        setSearchError('No results found. Try adjusting your search query or lowering the similarity threshold.');
+        setSearchError(
+          'No results found. Try adjusting your search query or lowering the similarity threshold.'
+        );
       }
     } catch (error: any) {
       setSearchError(error.message || 'Failed to search knowledge');
@@ -962,10 +969,11 @@ export function KnowledgeTab({ agentId }: { agentId: UUID }) {
           )}
           <div className="flex gap-2 ml-auto sm:ml-0">
             <Button
-              variant={showSearch ? "default" : "outline"}
+              variant={showSearch ? 'default' : 'outline'}
               onClick={() => {
                 setShowSearch(!showSearch);
-                if (showSearch) { // if turning search OFF
+                if (showSearch) {
+                  // if turning search OFF
                   setSearchQuery('');
                   setSearchResults([]);
                   setSearchError(null);
@@ -1023,7 +1031,8 @@ export function KnowledgeTab({ agentId }: { agentId: UUID }) {
             <div className="flex items-center gap-2">
               <Info className="h-4 w-4 text-muted-foreground flex-shrink-0" />
               <p className="text-sm text-muted-foreground">
-                Search your knowledge base using semantic vector search. Adjust the similarity threshold to control how closely results must match your query.
+                Search your knowledge base using semantic vector search. Adjust the similarity
+                threshold to control how closely results must match your query.
               </p>
             </div>
 
@@ -1057,9 +1066,7 @@ export function KnowledgeTab({ agentId }: { agentId: UUID }) {
 
               <div className="space-y-2">
                 <div className="flex items-center justify-between">
-                  <label className="text-sm font-medium">
-                    Similarity Threshold
-                  </label>
+                  <label className="text-sm font-medium">Similarity Threshold</label>
                   <span className="text-sm text-muted-foreground">
                     {searchThreshold.toFixed(2)} ({Math.round(searchThreshold * 100)}% match)
                   </span>
@@ -1237,9 +1244,7 @@ export function KnowledgeTab({ agentId }: { agentId: UUID }) {
                           </span>
                         </div>
                       </div>
-                      <p className="text-sm line-clamp-3">
-                        {result.content?.text || 'No content'}
-                      </p>
+                      <p className="text-sm line-clamp-3">{result.content?.text || 'No content'}</p>
                       {result.metadata?.position !== undefined && (
                         <div className="text-xs text-muted-foreground mt-1">
                           Fragment position: {result.metadata.position}

@@ -907,13 +907,15 @@ export class KnowledgeTestSuite implements TestSuite {
             roomId: runtime.agentId,
             entityId: runtime.agentId,
           });
-          
+
           // If we get here without error, that's a problem
           throw new Error('Expected error for empty content but none was thrown');
         } catch (error: any) {
           // This is expected - verify it's the right error
-          if (!error.message.includes('No text content extracted') && 
-              !error.message.includes('Expected error for empty content')) {
+          if (
+            !error.message.includes('No text content extracted') &&
+            !error.message.includes('Expected error for empty content')
+          ) {
             throw new Error(`Unexpected error message: ${error.message}`);
           }
         }
@@ -929,7 +931,7 @@ export class KnowledgeTestSuite implements TestSuite {
             roomId: runtime.agentId,
             entityId: runtime.agentId,
           });
-          
+
           // If we get here, that's unexpected
           throw new Error('Expected error for null content but none was thrown');
         } catch (error: any) {
@@ -1182,13 +1184,13 @@ export class KnowledgeTestSuite implements TestSuite {
       fn: async (runtime: IAgentRuntime) => {
         // Create test docs folder
         const docsPath = path.join(process.cwd(), 'test-startup-docs');
-        
+
         try {
           // Clean up any existing test folder first
           if (fs.existsSync(docsPath)) {
             fs.rmSync(docsPath, { recursive: true, force: true });
           }
-          
+
           fs.mkdirSync(docsPath, { recursive: true });
 
           // Create test documents
@@ -1210,7 +1212,7 @@ export class KnowledgeTestSuite implements TestSuite {
             EMBEDDING_PROVIDER: 'openai',
             TEXT_EMBEDDING_MODEL: 'text-embedding-3-small',
           });
-          
+
           runtime.services.set(KnowledgeService.serviceType as any, service);
 
           // Wait for document loading to complete (service has 1s delay + processing time)

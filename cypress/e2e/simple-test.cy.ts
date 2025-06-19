@@ -31,4 +31,42 @@ describe('Plugin Knowledge Server Test', () => {
       expect(response.status).to.be.oneOf([200, 404]);
     });
   });
+
+  it('should verify knowledge plugin API endpoints work', () => {
+    // Get a test agent ID - we'll use a dummy one since we just want to test the API structure
+    const testAgentId = 'b438180f-bcb4-0e28-8cb1-ec0264051e59';
+    
+    // Test documents endpoint
+    cy.request({
+      method: 'GET',
+      url: `/api/documents?agentId=${testAgentId}`,
+      failOnStatusCode: false,
+    }).then((response) => {
+      expect(response.status).to.eq(200);
+      expect(response.body).to.have.property('success', true);
+      expect(response.body.data).to.have.property('memories');
+    });
+
+    // Test search endpoint
+    cy.request({
+      method: 'GET', 
+      url: `/api/search?agentId=${testAgentId}&q=test`,
+      failOnStatusCode: false,
+    }).then((response) => {
+      expect(response.status).to.eq(200);
+      expect(response.body).to.have.property('success', true);
+      expect(response.body.data).to.have.property('results');
+    });
+
+    // Test knowledges endpoint
+    cy.request({
+      method: 'GET',
+      url: `/api/knowledges?agentId=${testAgentId}`,
+      failOnStatusCode: false,
+    }).then((response) => {
+      expect(response.status).to.eq(200);
+      expect(response.body).to.have.property('success', true);
+      expect(response.body.data).to.have.property('chunks');
+    });
+  });
 }); 

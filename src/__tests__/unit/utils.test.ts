@@ -28,4 +28,4 @@ describe('looksLikeBase64', () => {
     expect(looksLikeBase64(undefined)).toBe(false);
     expect(looksLikeBase64('')).toBe(false);
   });
-}); 
+});

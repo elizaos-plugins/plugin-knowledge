@@ -97,7 +97,10 @@ export async function loadDocsFromPath(
 
       // Create knowledge options
       const knowledgeOptions: AddKnowledgeOptions = {
-        clientDocumentId: createUniqueUuid((service as any).runtime, `docs-${fileName}-${Date.now()}`) as UUID,
+        clientDocumentId: createUniqueUuid(
+          (service as any).runtime,
+          `docs-${fileName}-${Date.now()}`
+        ) as UUID,
         contentType,
         originalFilename: fileName,
         worldId: worldId || agentId,

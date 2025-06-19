@@ -15,7 +15,7 @@ export const attachmentHandlingTest: TestCase = {
 
     // Test 1: Add knowledge simulating attachment
     console.log('Test 1: Testing knowledge addition...');
-    
+
     const testDoc = {
       clientDocumentId: uuidv4() as UUID,
       contentType: 'text/plain',
@@ -31,11 +31,11 @@ export const attachmentHandlingTest: TestCase = {
 
     try {
       const result = await (service as any).addKnowledge(testDoc);
-      
+
       if (!result.storedDocumentMemoryId) {
         throw new Error('Failed to add knowledge');
       }
-      
+
       console.log(`✓ Added knowledge successfully, ${result.fragmentCount} fragments created`);
 
       // Verify storage
@@ -43,13 +43,12 @@ export const attachmentHandlingTest: TestCase = {
       if (!stored) {
         throw new Error('Document not found in storage');
       }
-      
+
       console.log('✓ Document verified in storage');
 
       // Cleanup
       await (service as any).deleteMemory(result.storedDocumentMemoryId);
       console.log('✓ Cleanup completed');
-      
     } catch (error) {
       console.error('Test failed:', error);
       throw error;
@@ -59,4 +58,4 @@ export const attachmentHandlingTest: TestCase = {
   },
 };
 
-export default attachmentHandlingTest; 
+export default attachmentHandlingTest;

@@ -1,8 +1,8 @@
 import { describe, it, expect, beforeEach, vi, Mock } from 'vitest';
-import { 
-  advancedSearchAction, 
-  knowledgeAnalyticsAction, 
-  exportKnowledgeAction 
+import {
+  advancedSearchAction,
+  knowledgeAnalyticsAction,
+  exportKnowledgeAction,
 } from '../../actions';
 import { KnowledgeService } from '../../service';
 import type { IAgentRuntime, Memory, State, UUID, ActionResult } from '@elizaos/core';
@@ -96,20 +96,20 @@ describe('Advanced Knowledge Features', () => {
         roomId: generateMockUuid(23),
       };
 
-      const result = await advancedSearchAction.handler?.(
+      const result = (await advancedSearchAction.handler?.(
         mockRuntime,
         message,
         mockState,
         {},
         mockCallback
-      ) as ActionResult;
+      )) as ActionResult;
 
       // Check that advancedSearch was called
       expect(mockKnowledgeService.advancedSearch).toHaveBeenCalled();
-      
+
       // Get the actual call arguments
       const callArgs = (mockKnowledgeService.advancedSearch as Mock).mock.calls[0][0];
-      
+
       // Verify key properties
       expect(callArgs.query).toContain('AI');
       expect(callArgs.filters.contentType).toEqual(['application/pdf']);
@@ -141,13 +141,13 @@ describe('Advanced Knowledge Features', () => {
         roomId: generateMockUuid(32),
       };
 
-      const result = await advancedSearchAction.handler?.(
+      const result = (await advancedSearchAction.handler?.(
         mockRuntime,
         message,
         mockState,
         {},
         mockCallback
-      ) as ActionResult;
+      )) as ActionResult;
 
       expect(mockCallback).toHaveBeenCalledWith({
         text: 'No documents found matching your criteria.',
@@ -202,13 +202,13 @@ describe('Advanced Knowledge Features', () => {
         roomId: generateMockUuid(45),
       };
 
-      const result = await knowledgeAnalyticsAction.handler?.(
+      const result = (await knowledgeAnalyticsAction.handler?.(
         mockRuntime,
         message,
         mockState,
         {},
         mockCallback
-      ) as ActionResult;
+      )) as ActionResult;
 
       expect(result.data).toEqual(mockAnalytics);
       expect(mockCallback).toHaveBeenCalledWith(
@@ -240,17 +240,21 @@ describe('Advanced Knowledge Features', () => {
     });
 
     it('should export to JSON format by default', async () => {
-      const mockExportData = JSON.stringify({
-        exportDate: new Date().toISOString(),
-        agentId: mockRuntime.agentId,
-        documents: [
-          {
-            id: generateMockUuid(60),
-            content: { text: 'Test document content' },
-            metadata: { originalFilename: 'test.txt' },
-          },
-        ],
-      }, null, 2);
+      const mockExportData = JSON.stringify(
+        {
+          exportDate: new Date().toISOString(),
+          agentId: mockRuntime.agentId,
+          documents: [
+            {
+              id: generateMockUuid(60),
+              content: { text: 'Test document content' },
+              metadata: { originalFilename: 'test.txt' },
+            },
+          ],
+        },
+        null,
+        2
+      );
 
       (mockKnowledgeService.exportKnowledge as Mock).mockResolvedValue(mockExportData);
 
@@ -263,13 +267,13 @@ describe('Advanced Knowledge Features', () => {
         roomId: generateMockUuid(55),
       };
 
-      const result = await exportKnowledgeAction.handler?.(
+      const result = (await exportKnowledgeAction.handler?.(
         mockRuntime,
         message,
         mockState,
         {},
         mockCallback
-      ) as ActionResult;
+      )) as ActionResult;
 
       expect(mockKnowledgeService.exportKnowledge).toHaveBeenCalledWith({
         format: 'json',
@@ -285,7 +289,8 @@ describe('Advanced Knowledge Features', () => {
     });
 
     it('should detect CSV format from message', async () => {
-      const mockCsvData = 'ID,Title,Content,Type,Created\n1,test.txt,Test content,text/plain,2024-01-01';
+      const mockCsvData =
+        'ID,Title,Content,Type,Created\n1,test.txt,Test content,text/plain,2024-01-01';
 
       (mockKnowledgeService.exportKnowledge as Mock).mockResolvedValue(mockCsvData);
 
@@ -298,13 +303,7 @@ describe('Advanced Knowledge Features', () => {
         roomId: generateMockUuid(58),
       };
 
-      await exportKnowledgeAction.handler?.(
-        mockRuntime,
-        message,
-        mockState,
-        {},
-        mockCallback
-      );
+      await exportKnowledgeAction.handler?.(mockRuntime, message, mockState, {}, mockCallback);
 
       expect(mockKnowledgeService.exportKnowledge).toHaveBeenCalledWith({
         format: 'csv',
@@ -314,7 +313,8 @@ describe('Advanced Knowledge Features', () => {
     });
 
     it('should detect Markdown format from message', async () => {
-      const mockMarkdownData = '# Document 1\n\nContent here\n\n---\n\n# Document 2\n\nMore content';
+      const mockMarkdownData =
+        '# Document 1\n\nContent here\n\n---\n\n# Document 2\n\nMore content';
 
       (mockKnowledgeService.exportKnowledge as Mock).mockResolvedValue(mockMarkdownData);
 
@@ -327,13 +327,7 @@ describe('Advanced Knowledge Features', () => {
         roomId: generateMockUuid(61),
       };
 
-      await exportKnowledgeAction.handler?.(
-        mockRuntime,
-        message,
-        mockState,
-        {},
-        mockCallback
-      );
+      await exportKnowledgeAction.handler?.(mockRuntime, message, mockState, {}, mockCallback);
 
       expect(mockKnowledgeService.exportKnowledge).toHaveBeenCalledWith({
         format: 'markdown',
@@ -360,38 +354,38 @@ describe('Advanced Knowledge Features', () => {
       const batchOp = {
         operation: 'add' as const,
         items: [
-          { 
-            data: { 
-              content: 'Doc 1', 
+          {
+            data: {
+              content: 'Doc 1',
               contentType: 'text/plain',
               clientDocumentId: generateMockUuid(71),
               originalFilename: 'doc1.txt',
               worldId: mockRuntime.agentId,
               roomId: mockRuntime.agentId,
               entityId: mockRuntime.agentId,
-            } 
+            },
           },
-          { 
-            data: { 
-              content: 'Doc 2', 
+          {
+            data: {
+              content: 'Doc 2',
               contentType: 'text/plain',
               clientDocumentId: generateMockUuid(72),
               originalFilename: 'doc2.txt',
               worldId: mockRuntime.agentId,
               roomId: mockRuntime.agentId,
               entityId: mockRuntime.agentId,
-            } 
+            },
           },
-          { 
-            data: { 
-              content: 'Doc 3', 
+          {
+            data: {
+              content: 'Doc 3',
               contentType: 'text/plain',
               clientDocumentId: generateMockUuid(73),
               originalFilename: 'doc3.txt',
               worldId: mockRuntime.agentId,
               roomId: mockRuntime.agentId,
               entityId: mockRuntime.agentId,
-            } 
+            },
           },
         ],
       };
@@ -462,7 +456,8 @@ describe('Advanced Knowledge Features', () => {
     });
 
     it('should import CSV data', async () => {
-      const csvData = 'ID,Title,Content,Type,Created\n1,test.txt,Test content,text/plain,2024-01-01';
+      const csvData =
+        'ID,Title,Content,Type,Created\n1,test.txt,Test content,text/plain,2024-01-01';
 
       const mockImportResult = {
         successful: 1,
@@ -480,4 +475,4 @@ describe('Advanced Knowledge Features', () => {
       expect(result.successful).toBe(1);
     });
   });
-}); 
+});

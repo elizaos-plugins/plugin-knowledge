@@ -23,8 +23,8 @@ import {
   processFragmentsSynchronously,
 } from './document-processor.ts';
 import { DocumentRepository, FragmentRepository } from './repositories/index.ts';
-import type { 
-  KnowledgeConfig, 
+import type {
+  KnowledgeConfig,
   LoadResult,
   AddKnowledgeOptions,
   KnowledgeSearchOptions,
@@ -439,11 +439,11 @@ export class KnowledgeService extends Service {
     if (scope?.entityId) filterScope.entityId = scope.entityId;
 
     // Use configurable search parameters
-    const matchThreshold = this.knowledgeConfig.SEARCH_MATCH_THRESHOLD 
-      ? Number(this.knowledgeConfig.SEARCH_MATCH_THRESHOLD) 
+    const matchThreshold = this.knowledgeConfig.SEARCH_MATCH_THRESHOLD
+      ? Number(this.knowledgeConfig.SEARCH_MATCH_THRESHOLD)
       : 0.1;
-    const resultCount = this.knowledgeConfig.SEARCH_RESULT_COUNT 
-      ? Number(this.knowledgeConfig.SEARCH_RESULT_COUNT) 
+    const resultCount = this.knowledgeConfig.SEARCH_RESULT_COUNT
+      ? Number(this.knowledgeConfig.SEARCH_RESULT_COUNT)
       : 20;
 
     const fragments = await this.runtime.searchMemories({
@@ -727,7 +727,7 @@ export class KnowledgeService extends Service {
     hasMore: boolean;
   }> {
     logger.debug('KnowledgeService: Advanced search called with options:', options);
-    
+
     if (!options.query || options.query.trim().length === 0) {
       return { results: [], totalCount: 0, hasMore: false };
     }
@@ -749,19 +749,19 @@ export class KnowledgeService extends Service {
     // Apply metadata filters if available
     if (options.filters) {
       const metadataFilters: Record<string, any> = {};
-      
+
       if (options.filters.contentType?.length) {
         metadataFilters.contentType = { $in: options.filters.contentType };
       }
-      
+
       if (options.filters.tags?.length) {
         metadataFilters.tags = { $overlap: options.filters.tags };
       }
-      
+
       if (options.filters.source?.length) {
         metadataFilters.source = { $in: options.filters.source };
       }
-      
+
       if (options.filters.dateRange) {
         metadataFilters.createdAt = {};
         if (options.filters.dateRange.start) {
@@ -771,7 +771,7 @@ export class KnowledgeService extends Service {
           metadataFilters.createdAt.$lte = options.filters.dateRange.end.getTime();
         }
       }
-      
+
       if (Object.keys(metadataFilters).length > 0) {
         filterConditions.metadata = metadataFilters;
       }
@@ -786,7 +786,7 @@ export class KnowledgeService extends Service {
       sortedFragments.sort((a, b) => {
         const field = options.sort!.field;
         const order = options.sort!.order === 'asc' ? 1 : -1;
-        
+
         if (field === 'similarity') {
           return ((a.similarity || 0) - (b.similarity || 0)) * order;
         } else if (field === 'createdAt') {
@@ -824,8 +824,10 @@ export class KnowledgeService extends Service {
    * Batch operations for efficient knowledge management
    */
   async batchOperation(operation: BatchKnowledgeOperation): Promise<BatchOperationResult> {
-    logger.info(`KnowledgeService: Starting batch ${operation.operation} operation with ${operation.items.length} items`);
-    
+    logger.info(
+      `KnowledgeService: Starting batch ${operation.operation} operation with ${operation.items.length} items`
+    );
+
     const results: BatchOperationResult = {
       successful: 0,
       failed: 0,
@@ -836,17 +838,17 @@ export class KnowledgeService extends Service {
     const batchSize = 5; // Process 5 items at a time
     for (let i = 0; i < operation.items.length; i += batchSize) {
       const batch = operation.items.slice(i, i + batchSize);
-      
+
       const batchPromises = batch.map(async (item) => {
         try {
           let result: any;
-          
+
           switch (operation.operation) {
             case 'add':
               if (!item.data) throw new Error('Missing data for add operation');
               result = await this.addKnowledge(item.data);
               break;
-              
+
             case 'update':
               if (!item.id || !item.metadata) throw new Error('Missing id or metadata for update');
               // Update document metadata
@@ -862,14 +864,14 @@ export class KnowledgeService extends Service {
                 throw new Error('Document not found');
               }
               break;
-              
+
             case 'delete':
               if (!item.id) throw new Error('Missing id for delete operation');
               await this.deleteMemory(item.id as UUID);
               result = { deleted: true };
               break;
           }
-          
+
           results.successful++;
           return {
             id: item.id || result.clientDocumentId || 'unknown',
@@ -885,12 +887,14 @@ export class KnowledgeService extends Service {
           };
         }
       });
-      
+
       const batchResults = await Promise.all(batchPromises);
       results.results.push(...batchResults);
     }
 
-    logger.info(`KnowledgeService: Batch operation completed. Success: ${results.successful}, Failed: ${results.failed}`);
+    logger.info(
+      `KnowledgeService: Batch operation completed. Success: ${results.successful}, Failed: ${results.failed}`
+    );
     return results;
   }
 
@@ -899,7 +903,7 @@ export class KnowledgeService extends Service {
    */
   async getAnalytics(): Promise<KnowledgeAnalytics> {
     logger.debug('KnowledgeService: Generating analytics');
-    
+
     try {
       // Get all documents
       const documents = await this.getMemories({
@@ -921,7 +925,7 @@ export class KnowledgeService extends Service {
       documents.forEach((doc) => {
         const contentType = (doc.metadata as any)?.contentType || 'unknown';
         contentTypes[contentType] = (contentTypes[contentType] || 0) + 1;
-        
+
         // Estimate storage size (rough calculation)
         const contentSize = JSON.stringify(doc.content).length;
         totalStorageSize += contentSize;
@@ -957,7 +961,7 @@ export class KnowledgeService extends Service {
    */
   async exportKnowledge(options: KnowledgeExportOptions): Promise<string> {
     logger.info(`KnowledgeService: Exporting knowledge in ${options.format} format`);
-    
+
     // Get documents based on filters
     let documents = await this.getMemories({
       tableName: 'documents',
@@ -966,11 +970,11 @@ export class KnowledgeService extends Service {
 
     // Apply filters
     if (options.documentIds?.length) {
-      documents = documents.filter(doc => options.documentIds!.includes(doc.id!));
+      documents = documents.filter((doc) => options.documentIds!.includes(doc.id!));
     }
 
     if (options.dateRange) {
-      documents = documents.filter(doc => {
+      documents = documents.filter((doc) => {
         const createdAt = doc.createdAt || 0;
         if (options.dateRange!.start && createdAt < options.dateRange!.start.getTime()) {
           return false;
@@ -985,22 +989,26 @@ export class KnowledgeService extends Service {
     // Format based on export type
     switch (options.format) {
       case 'json': {
-        return JSON.stringify({
-          exportDate: new Date().toISOString(),
-          agentId: this.runtime.agentId,
-          documents: documents.map(doc => ({
-            id: doc.id,
-            content: doc.content,
-            metadata: options.includeMetadata ? doc.metadata : undefined,
-            createdAt: doc.createdAt,
-          })),
-        }, null, 2);
+        return JSON.stringify(
+          {
+            exportDate: new Date().toISOString(),
+            agentId: this.runtime.agentId,
+            documents: documents.map((doc) => ({
+              id: doc.id,
+              content: doc.content,
+              metadata: options.includeMetadata ? doc.metadata : undefined,
+              createdAt: doc.createdAt,
+            })),
+          },
+          null,
+          2
+        );
       }
 
       case 'csv': {
         // Simple CSV export
         const headers = ['ID', 'Title', 'Content', 'Type', 'Created'];
-        const rows = documents.map(doc => [
+        const rows = documents.map((doc) => [
           doc.id || '',
           (doc.metadata as any)?.originalFilename || '',
           doc.content.text || '',
@@ -1008,19 +1016,21 @@ export class KnowledgeService extends Service {
           new Date(doc.createdAt || 0).toISOString(),
         ]);
 
-        return [headers, ...rows].map(row => row.join(',')).join('\n');
+        return [headers, ...rows].map((row) => row.join(',')).join('\n');
       }
 
       case 'markdown': {
-        return documents.map(doc => {
-          const title = (doc.metadata as any)?.originalFilename || 'Untitled';
-          const content = doc.content.text || '';
-          const metadata = options.includeMetadata 
-            ? `\n\n---\n${JSON.stringify(doc.metadata, null, 2)}\n---`
-            : '';
+        return documents
+          .map((doc) => {
+            const title = (doc.metadata as any)?.originalFilename || 'Untitled';
+            const content = doc.content.text || '';
+            const metadata = options.includeMetadata
+              ? `\n\n---\n${JSON.stringify(doc.metadata, null, 2)}\n---`
+              : '';
 
-          return `# ${title}\n\n${content}${metadata}`;
-        }).join('\n\n---\n\n');
+            return `# ${title}\n\n${content}${metadata}`;
+          })
+          .join('\n\n---\n\n');
       }
 
       default:
@@ -1031,9 +1041,12 @@ export class KnowledgeService extends Service {
   /**
    * Import knowledge from various formats
    */
-  async importKnowledge(data: string, options: KnowledgeImportOptions): Promise<BatchOperationResult> {
+  async importKnowledge(
+    data: string,
+    options: KnowledgeImportOptions
+  ): Promise<BatchOperationResult> {
     logger.info(`KnowledgeService: Importing knowledge from ${options.format} format`);
-    
+
     let items: AddKnowledgeOptions[] = [];
 
     try {
@@ -1041,7 +1054,8 @@ export class KnowledgeService extends Service {
         case 'json': {
           const jsonData = JSON.parse(data);
           items = jsonData.documents.map((doc: any) => ({
-            clientDocumentId: doc.id || stringToUuid(this.runtime.agentId + Date.now() + Math.random()) as UUID,
+            clientDocumentId:
+              doc.id || (stringToUuid(this.runtime.agentId + Date.now() + Math.random()) as UUID),
             content: doc.content.text || doc.content,
             contentType: doc.metadata?.contentType || 'text/plain',
             originalFilename: doc.metadata?.originalFilename || 'imported.txt',
@@ -1057,12 +1071,14 @@ export class KnowledgeService extends Service {
           // Simple CSV parsing (production would use a proper CSV parser)
           const lines = data.split('\n');
           const headers = lines[0].split(',');
-          
+
           for (let i = 1; i < lines.length; i++) {
             const values = lines[i].split(',');
             if (values.length >= 3) {
               items.push({
-                clientDocumentId: (values[0] as UUID) || stringToUuid(this.runtime.agentId + Date.now() + i) as UUID,
+                clientDocumentId:
+                  (values[0] as UUID) ||
+                  (stringToUuid(this.runtime.agentId + Date.now() + i) as UUID),
                 content: values[2] || '',
                 contentType: values[3] || 'text/plain',
                 originalFilename: values[1] || 'imported.txt',
@@ -1082,7 +1098,7 @@ export class KnowledgeService extends Service {
             const lines = doc.split('\n');
             const title = lines[0].replace(/^#\s+/, '') || `Document ${index + 1}`;
             const content = lines.slice(1).join('\n').trim();
-            
+
             return {
               clientDocumentId: stringToUuid(this.runtime.agentId + title + Date.now()) as UUID,
               content,
@@ -1102,13 +1118,13 @@ export class KnowledgeService extends Service {
 
       // Validate if requested
       if (options.validateBeforeImport) {
-        items = items.filter(item => item.content && item.content.length > 0);
+        items = items.filter((item) => item.content && item.content.length > 0);
       }
 
       // Process import as batch operation
       const batchOp: BatchKnowledgeOperation = {
         operation: 'add',
-        items: items.map(data => ({ data })),
+        items: items.map((data) => ({ data })),
       };
 
       return await this.batchOperation(batchOp);

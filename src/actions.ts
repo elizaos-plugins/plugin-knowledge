@@ -7,13 +7,13 @@ import type {
   State,
   UUID,
   ActionResult,
-} from "@elizaos/core";
-import { logger, stringToUuid } from "@elizaos/core";
-import * as fs from "fs";
-import * as path from "path";
-import { KnowledgeService } from "./service.ts";
-import { AddKnowledgeOptions } from "./types.ts";
-import { fetchUrlContent } from "./utils.ts";
+} from '@elizaos/core';
+import { logger, stringToUuid } from '@elizaos/core';
+import * as fs from 'fs';
+import * as path from 'path';
+import { KnowledgeService } from './service.ts';
+import { AddKnowledgeOptions } from './types.ts';
+import { fetchUrlContent } from './utils.ts';
 
 /**
  * Action to process knowledge from files or text
@@ -86,7 +86,9 @@ export const processKnowledgeAction: Action = {
     const hasPath = pathPattern.test(text);
 
     // Check if there are attachments in the message
-    const hasAttachments = !!(message.content.attachments && message.content.attachments.length > 0);
+    const hasAttachments = !!(
+      message.content.attachments && message.content.attachments.length > 0
+    );
 
     // Check if service is available
     const service = runtime.getService(KnowledgeService.serviceType);
@@ -113,15 +115,20 @@ export const processKnowledgeAction: Action = {
 
       const text = message.content.text || '';
       const attachments = message.content.attachments || [];
-      
+
       let response: Content;
       let processedCount = 0;
-      const results: Array<{ filename: string; success: boolean; fragmentCount?: number; error?: string }> = [];
+      const results: Array<{
+        filename: string;
+        success: boolean;
+        fragmentCount?: number;
+        error?: string;
+      }> = [];
 
       // Process attachments first if they exist
       if (attachments.length > 0) {
         logger.info(`Processing ${attachments.length} attachments from message`);
-        
+
         for (const attachment of attachments) {
           try {
             // Handle different attachment types
@@ -131,7 +138,9 @@ export const processKnowledgeAction: Action = {
 
             if (attachment.url) {
               // Fetch content from URL
-              const { content: fetchedContent, contentType: fetchedType } = await fetchUrlContent(attachment.url);
+              const { content: fetchedContent, contentType: fetchedType } = await fetchUrlContent(
+                attachment.url
+              );
               content = fetchedContent;
               contentType = fetchedType;
               filename = attachment.title || attachment.url.split('/').pop() || 'attachment';
@@ -177,9 +186,9 @@ export const processKnowledgeAction: Action = {
         }
 
         // Generate response for attachments
-        const successCount = results.filter(r => r.success).length;
-        const failCount = results.filter(r => !r.success).length;
-        
+        const successCount = results.filter((r) => r.success).length;
+        const failCount = results.filter((r) => !r.success).length;
+
         if (successCount > 0 && failCount === 0) {
           response = {
             text: `I've successfully processed ${successCount} attachment${successCount > 1 ? 's' : ''} and added ${successCount > 1 ? 'them' : 'it'} to my knowledge base.`,
@@ -208,7 +217,7 @@ export const processKnowledgeAction: Action = {
             response = {
               text: `I couldn't find the file at ${filePath}. Please check the path and try again.`,
             };
-            
+
             if (callback) {
               await callback(response);
             }
@@ -256,7 +265,7 @@ export const processKnowledgeAction: Action = {
             response = {
               text: 'I need some content to add to my knowledge base. Please provide text or a file path.',
             };
-            
+
             if (callback) {
               await callback(response);
             }
@@ -265,9 +274,11 @@ export const processKnowledgeAction: Action = {
 
           // Prepare knowledge options for text
           const knowledgeOptions: AddKnowledgeOptions = {
-            clientDocumentId: stringToUuid(runtime.agentId + "text" + Date.now() + "user-knowledge"),
-            contentType: "text/plain",
-            originalFilename: "user-knowledge.txt",
+            clientDocumentId: stringToUuid(
+              runtime.agentId + 'text' + Date.now() + 'user-knowledge'
+            ),
+            contentType: 'text/plain',
+            originalFilename: 'user-knowledge.txt',
             worldId: runtime.agentId,
             content: knowledgeContent,
             roomId: message.roomId,
@@ -286,11 +297,11 @@ export const processKnowledgeAction: Action = {
       if (callback) {
         await callback(response);
       }
-      
+
       return {
         data: {
           processedCount: results.length,
-          successCount: results.filter(r => r.success).length,
+          successCount: results.filter((r) => r.success).length,
           results,
         },
         text: response.text,
@@ -305,7 +316,7 @@ export const processKnowledgeAction: Action = {
       if (callback) {
         await callback(errorResponse);
       }
-      
+
       return {
         data: { error: error instanceof Error ? error.message : String(error) },
         text: errorResponse.text,
@@ -432,7 +443,7 @@ export const searchKnowledgeAction: Action = {
       if (callback) {
         await callback(response);
       }
-      
+
       return {
         data: {
           query,
@@ -451,7 +462,7 @@ export const searchKnowledgeAction: Action = {
       if (callback) {
         await callback(errorResponse);
       }
-      
+
       return {
         data: { error: error instanceof Error ? error.message : String(error) },
         text: errorResponse.text,
@@ -466,7 +477,7 @@ export const searchKnowledgeAction: Action = {
 export const advancedSearchAction: Action = {
   name: 'ADVANCED_KNOWLEDGE_SEARCH',
   description: 'Perform advanced search with filters, sorting, and pagination',
-  
+
   similes: [
     'advanced search',
     'filter knowledge',
@@ -474,7 +485,7 @@ export const advancedSearchAction: Action = {
     'find documents by type',
     'search by date',
   ],
-  
+
   examples: [
     [
       {
@@ -492,16 +503,18 @@ export const advancedSearchAction: Action = {
       },
     ],
   ],
-  
+
   validate: async (runtime: IAgentRuntime, message: Memory) => {
     const text = message.content.text?.toLowerCase() || '';
-    const hasAdvancedKeywords = ['filter', 'type', 'date', 'sort', 'pdf', 'recent'].some(k => text.includes(k));
-    const hasSearchKeywords = ['search', 'find', 'look'].some(k => text.includes(k));
-    
+    const hasAdvancedKeywords = ['filter', 'type', 'date', 'sort', 'pdf', 'recent'].some((k) =>
+      text.includes(k)
+    );
+    const hasSearchKeywords = ['search', 'find', 'look'].some((k) => text.includes(k));
+
     const service = runtime.getService(KnowledgeService.serviceType);
     return !!(service && hasSearchKeywords && hasAdvancedKeywords);
   },
-  
+
   handler: async (
     runtime: IAgentRuntime,
     message: Memory,
@@ -514,21 +527,21 @@ export const advancedSearchAction: Action = {
       if (!service) {
         throw new Error('Knowledge service not available');
       }
-      
+
       const text = message.content.text || '';
-      
+
       // Extract search parameters from natural language
       const searchOptions: any = {
         query: text.replace(/search|find|filter|by|type|date|sort/gi, '').trim(),
         filters: {},
         limit: 10,
       };
-      
+
       // Detect content type filters
       if (text.includes('pdf')) searchOptions.filters.contentType = ['application/pdf'];
       if (text.includes('text')) searchOptions.filters.contentType = ['text/plain'];
       if (text.includes('markdown')) searchOptions.filters.contentType = ['text/markdown'];
-      
+
       // Detect date filters
       if (text.includes('today')) {
         const today = new Date();
@@ -539,16 +552,16 @@ export const advancedSearchAction: Action = {
         weekAgo.setDate(weekAgo.getDate() - 7);
         searchOptions.filters.dateRange = { start: weekAgo };
       }
-      
+
       // Detect sorting
       if (text.includes('recent') || text.includes('newest')) {
         searchOptions.sort = { field: 'createdAt', order: 'desc' };
       } else if (text.includes('relevant')) {
         searchOptions.sort = { field: 'similarity', order: 'desc' };
       }
-      
+
       const results = await service.advancedSearch(searchOptions);
-      
+
       let response: Content;
       if (results.results.length === 0) {
         response = {
@@ -562,16 +575,16 @@ export const advancedSearchAction: Action = {
             return `${index + 1}. ${metadata?.originalFilename || 'Document'} (${metadata?.contentType || 'unknown'}):\n   ${item.content.text?.substring(0, 200)}...`;
           })
           .join('\n\n');
-          
+
         response = {
           text: `Found ${results.totalCount} documents. Here are the top results:\n\n${formattedResults}`,
         };
       }
-      
+
       if (callback) {
         await callback(response);
       }
-      
+
       return {
         data: results,
         text: response.text,
@@ -595,7 +608,7 @@ export const advancedSearchAction: Action = {
 export const knowledgeAnalyticsAction: Action = {
   name: 'KNOWLEDGE_ANALYTICS',
   description: 'Get analytics and insights about the knowledge base',
-  
+
   similes: [
     'knowledge stats',
     'analytics',
@@ -603,7 +616,7 @@ export const knowledgeAnalyticsAction: Action = {
     'usage statistics',
     'knowledge metrics',
   ],
-  
+
   examples: [
     [
       {
@@ -621,16 +634,18 @@ export const knowledgeAnalyticsAction: Action = {
       },
     ],
   ],
-  
+
   validate: async (runtime: IAgentRuntime, message: Memory) => {
     const text = message.content.text?.toLowerCase() || '';
-    const hasKeywords = ['analytics', 'stats', 'statistics', 'metrics', 'insights', 'usage'].some(k => text.includes(k));
+    const hasKeywords = ['analytics', 'stats', 'statistics', 'metrics', 'insights', 'usage'].some(
+      (k) => text.includes(k)
+    );
     const hasKnowledgeWord = text.includes('knowledge');
-    
+
     const service = runtime.getService(KnowledgeService.serviceType);
     return !!(service && (hasKeywords || hasKnowledgeWord));
   },
-  
+
   handler: async (
     runtime: IAgentRuntime,
     message: Memory,
@@ -643,9 +658,9 @@ export const knowledgeAnalyticsAction: Action = {
       if (!service) {
         throw new Error('Knowledge service not available');
       }
-      
+
       const analytics = await service.getAnalytics();
-      
+
       const response: Content = {
         text: `📊 Knowledge Base Analytics:
 
@@ -658,17 +673,21 @@ ${Object.entries(analytics.contentTypes)
   .map(([type, count]) => `  • ${type}: ${count} documents`)
   .join('\n')}
 
-${analytics.queryStats.totalQueries > 0 ? `
+${
+  analytics.queryStats.totalQueries > 0
+    ? `
 🔍 Query Statistics:
   • Total Queries: ${analytics.queryStats.totalQueries}
   • Avg Response Time: ${analytics.queryStats.averageResponseTime.toFixed(2)}ms
-` : ''}`,
+`
+    : ''
+}`,
       };
-      
+
       if (callback) {
         await callback(response);
       }
-      
+
       return {
         data: analytics,
         text: response.text,
@@ -692,14 +711,9 @@ ${analytics.queryStats.totalQueries > 0 ? `
 export const exportKnowledgeAction: Action = {
   name: 'EXPORT_KNOWLEDGE',
   description: 'Export knowledge base to various formats',
-  
-  similes: [
-    'export knowledge',
-    'download knowledge',
-    'backup knowledge',
-    'save knowledge to file',
-  ],
-  
+
+  similes: ['export knowledge', 'download knowledge', 'backup knowledge', 'save knowledge to file'],
+
   examples: [
     [
       {
@@ -717,16 +731,18 @@ export const exportKnowledgeAction: Action = {
       },
     ],
   ],
-  
+
   validate: async (runtime: IAgentRuntime, message: Memory) => {
     const text = message.content.text?.toLowerCase() || '';
-    const hasExportKeywords = ['export', 'download', 'backup', 'save'].some(k => text.includes(k));
+    const hasExportKeywords = ['export', 'download', 'backup', 'save'].some((k) =>
+      text.includes(k)
+    );
     const hasKnowledgeWord = text.includes('knowledge');
-    
+
     const service = runtime.getService(KnowledgeService.serviceType);
     return !!(service && hasExportKeywords && hasKnowledgeWord);
   },
-  
+
   handler: async (
     runtime: IAgentRuntime,
     message: Memory,
@@ -739,32 +755,32 @@ export const exportKnowledgeAction: Action = {
       if (!service) {
         throw new Error('Knowledge service not available');
       }
-      
+
       const text = message.content.text || '';
-      
+
       // Detect format
       let format: 'json' | 'csv' | 'markdown' = 'json';
       if (text.includes('csv')) format = 'csv';
       else if (text.includes('markdown') || text.includes('md')) format = 'markdown';
-      
+
       const exportData = await service.exportKnowledge({
         format,
         includeMetadata: true,
         includeFragments: false,
       });
-      
+
       // In a real implementation, this would save to a file or return a download link
       // For now, we'll just return a preview
       const preview = exportData.substring(0, 500) + (exportData.length > 500 ? '...' : '');
-      
+
       const response: Content = {
         text: `✅ Knowledge base exported as ${format.toUpperCase()}. Size: ${(exportData.length / 1024).toFixed(2)} KB\n\nPreview:\n\`\`\`${format}\n${preview}\n\`\`\``,
       };
-      
+
       if (callback) {
         await callback(response);
       }
-      
+
       return {
         data: {
           format,
@@ -788,7 +804,7 @@ export const exportKnowledgeAction: Action = {
 
 // Update the export to include new actions
 export const knowledgeActions = [
-  processKnowledgeAction, 
+  processKnowledgeAction,
   searchKnowledgeAction,
   advancedSearchAction,
   knowledgeAnalyticsAction,

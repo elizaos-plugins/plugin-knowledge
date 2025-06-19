@@ -949,8 +949,8 @@ async function bulkDeleteKnowledgeHandler(req: any, res: any, runtime: IAgentRun
       })
     );
 
-    const successCount = results.filter(r => r.success).length;
-    const failCount = results.filter(r => !r.success).length;
+    const successCount = results.filter((r) => r.success).length;
+    const failCount = results.filter((r) => !r.success).length;
 
     sendSuccess(res, {
       results,
@@ -958,7 +958,7 @@ async function bulkDeleteKnowledgeHandler(req: any, res: any, runtime: IAgentRun
         requested: knowledgeIds.length,
         successful: successCount,
         failed: failCount,
-      }
+      },
     });
   } catch (error: any) {
     logger.error('[KNOWLEDGE BULK DELETE] Error:', error);
@@ -1167,7 +1167,7 @@ export const knowledgeRoutes: Route[] = [
           // Try next path
         }
       }
-      
+
       sendError(res, 404, 'NOT_FOUND', 'Test components page not found');
     },
   },

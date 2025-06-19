@@ -87,23 +87,29 @@ describe('processKnowledgeAction', () => {
       (path.extname as Mock).mockReturnValue('.pdf');
       (mockKnowledgeService.addKnowledge as Mock).mockResolvedValue({ fragmentCount: 5 });
 
-      const result = await processKnowledgeAction.handler?.(mockRuntime, message, mockState, {}, mockCallback) as ActionResult;
+      const result = (await processKnowledgeAction.handler?.(
+        mockRuntime,
+        message,
+        mockState,
+        {},
+        mockCallback
+      )) as ActionResult;
 
       expect(fs.existsSync).toHaveBeenCalledWith('/path/to/document.pdf');
       expect(fs.readFileSync).toHaveBeenCalledWith('/path/to/document.pdf');
       expect(mockKnowledgeService.addKnowledge).toHaveBeenCalledWith({
         clientDocumentId: expect.any(String),
-        contentType: "application/pdf",
-        originalFilename: "document.pdf",
-        worldId: "test-agent" as UUID,
-        content: Buffer.from("file content").toString("base64"),
+        contentType: 'application/pdf',
+        originalFilename: 'document.pdf',
+        worldId: 'test-agent' as UUID,
+        content: Buffer.from('file content').toString('base64'),
         roomId: message.roomId,
         entityId: message.entityId,
       });
       expect(mockCallback).toHaveBeenCalledWith({
         text: `I've successfully processed the document "document.pdf". It has been split into 5 searchable fragments and added to my knowledge base.`,
       });
-      
+
       expect(result).toBeDefined();
       expect(result?.text).toContain('successfully processed');
       expect(result?.data?.results).toBeInstanceOf(Array);
@@ -124,7 +130,13 @@ describe('processKnowledgeAction', () => {
 
       (fs.existsSync as Mock).mockReturnValue(false);
 
-      const result = await processKnowledgeAction.handler?.(mockRuntime, message, mockState, {}, mockCallback) as ActionResult;
+      const result = (await processKnowledgeAction.handler?.(
+        mockRuntime,
+        message,
+        mockState,
+        {},
+        mockCallback
+      )) as ActionResult;
 
       expect(fs.existsSync).toHaveBeenCalledWith('/non/existent/file.txt');
       expect(fs.readFileSync).not.toHaveBeenCalled();
@@ -147,15 +159,21 @@ describe('processKnowledgeAction', () => {
 
       (mockKnowledgeService.addKnowledge as Mock).mockResolvedValue({});
 
-      const result = await processKnowledgeAction.handler?.(mockRuntime, message, mockState, {}, mockCallback) as ActionResult;
+      const result = (await processKnowledgeAction.handler?.(
+        mockRuntime,
+        message,
+        mockState,
+        {},
+        mockCallback
+      )) as ActionResult;
 
       expect(fs.existsSync).not.toHaveBeenCalled();
       expect(mockKnowledgeService.addKnowledge).toHaveBeenCalledWith({
         clientDocumentId: expect.any(String),
-        contentType: "text/plain",
-        originalFilename: "user-knowledge.txt",
-        worldId: "test-agent" as UUID,
-        content: "to your knowledge: The capital of France is Paris.",
+        contentType: 'text/plain',
+        originalFilename: 'user-knowledge.txt',
+        worldId: 'test-agent' as UUID,
+        content: 'to your knowledge: The capital of France is Paris.',
         roomId: message.roomId,
         entityId: message.entityId,
       });
@@ -176,7 +194,13 @@ describe('processKnowledgeAction', () => {
         roomId: generateMockUuid(12),
       };
 
-      const result = await processKnowledgeAction.handler?.(mockRuntime, message, mockState, {}, mockCallback) as ActionResult;
+      const result = (await processKnowledgeAction.handler?.(
+        mockRuntime,
+        message,
+        mockState,
+        {},
+        mockCallback
+      )) as ActionResult;
 
       expect(fs.existsSync).not.toHaveBeenCalled();
       expect(mockKnowledgeService.addKnowledge).not.toHaveBeenCalled();
@@ -202,7 +226,13 @@ describe('processKnowledgeAction', () => {
       (path.extname as Mock).mockReturnValue('.txt');
       (mockKnowledgeService.addKnowledge as Mock).mockRejectedValue(new Error('Service error'));
 
-      const result = await processKnowledgeAction.handler?.(mockRuntime, message, mockState, {}, mockCallback) as ActionResult;
+      const result = (await processKnowledgeAction.handler?.(
+        mockRuntime,
+        message,
+        mockState,
+        {},
+        mockCallback
+      )) as ActionResult;
 
       expect(mockCallback).toHaveBeenCalledWith({
         text: 'I encountered an error while processing the knowledge: Service error',
@@ -215,12 +245,12 @@ describe('processKnowledgeAction', () => {
     it("should generate unique clientDocumentId's for different documents and content", async () => {
       // Mock Date.now() for this test to generate predictable clientDocumentId's
       const dateNowSpy = vi.spyOn(Date, 'now').mockReturnValue(1749491066994);
-      
+
       // Test with two different files
       const fileMessage1: Memory = {
         id: generateMockUuid(28),
         content: {
-          text: "Process the document at /path/to/doc1.pdf",
+          text: 'Process the document at /path/to/doc1.pdf',
         },
         entityId: generateMockUuid(29),
         roomId: generateMockUuid(30),
@@ -229,7 +259,7 @@ describe('processKnowledgeAction', () => {
       const fileMessage2: Memory = {
         id: generateMockUuid(31),
         content: {
-          text: "Process the document at /path/to/doc2.pdf",
+          text: 'Process the document at /path/to/doc2.pdf',
         },
         entityId: generateMockUuid(32),
         roomId: generateMockUuid(33),
@@ -239,7 +269,7 @@ describe('processKnowledgeAction', () => {
       const textMessage: Memory = {
         id: generateMockUuid(34),
         content: {
-          text: "Add this to your knowledge: Some unique content here.",
+          text: 'Add this to your knowledge: Some unique content here.',
         },
         entityId: generateMockUuid(35),
         roomId: generateMockUuid(36),
@@ -247,24 +277,32 @@ describe('processKnowledgeAction', () => {
 
       // Setup mocks for file operations
       (fs.existsSync as Mock).mockReturnValue(true);
-      (fs.readFileSync as Mock).mockReturnValue(Buffer.from("file content"));
-      (path.basename as Mock)
-        .mockReturnValueOnce("doc1.pdf")
-        .mockReturnValueOnce("doc2.pdf");
-      (path.extname as Mock)
-        .mockReturnValueOnce(".pdf")
-        .mockReturnValueOnce(".pdf");
+      (fs.readFileSync as Mock).mockReturnValue(Buffer.from('file content'));
+      (path.basename as Mock).mockReturnValueOnce('doc1.pdf').mockReturnValueOnce('doc2.pdf');
+      (path.extname as Mock).mockReturnValueOnce('.pdf').mockReturnValueOnce('.pdf');
 
       // Process all three messages
-      await processKnowledgeAction.handler?.(mockRuntime, fileMessage1, mockState, {}, mockCallback);
-      await processKnowledgeAction.handler?.(mockRuntime, fileMessage2, mockState, {}, mockCallback);
+      await processKnowledgeAction.handler?.(
+        mockRuntime,
+        fileMessage1,
+        mockState,
+        {},
+        mockCallback
+      );
+      await processKnowledgeAction.handler?.(
+        mockRuntime,
+        fileMessage2,
+        mockState,
+        {},
+        mockCallback
+      );
       await processKnowledgeAction.handler?.(mockRuntime, textMessage, mockState, {}, mockCallback);
 
       // Get all calls to addKnowledge
       const addKnowledgeCalls = (mockKnowledgeService.addKnowledge as Mock).mock.calls;
 
       // Extract clientDocumentId's from the knowledgeOptions objects
-      const clientDocumentIds = addKnowledgeCalls.map(call => call[0].clientDocumentId);
+      const clientDocumentIds = addKnowledgeCalls.map((call) => call[0].clientDocumentId);
 
       // Verify we have 3 unique IDs
       expect(clientDocumentIds.length).toBe(3);
@@ -272,7 +310,7 @@ describe('processKnowledgeAction', () => {
 
       // Verify the IDs are strings of the expected format
       const [file1Id, file2Id, textId] = clientDocumentIds;
-      
+
       // Verify all IDs are valid UUID-like strings
       expect(file1Id).toMatch(/^[0-9a-f-]+$/);
       expect(file2Id).toMatch(/^[0-9a-f-]+$/);
@@ -290,12 +328,12 @@ describe('processKnowledgeAction', () => {
     it("should generate unique clientDocumentId's for same content but different time", async () => {
       // Mock Date.now() for this test to generate predictable clientDocumentId's
       const dateNowSpy = vi.spyOn(Date, 'now').mockReturnValue(1749491066994);
-      
+
       // Test with two different files
       const textMessage1: Memory = {
         id: generateMockUuid(28),
         content: {
-          text: "Add this to your knowledge: Some unique content here.",
+          text: 'Add this to your knowledge: Some unique content here.',
         },
         entityId: generateMockUuid(29),
         roomId: generateMockUuid(30),
@@ -304,27 +342,38 @@ describe('processKnowledgeAction', () => {
       const textMessage2: Memory = {
         id: generateMockUuid(31),
         content: {
-          text: "Add this to your knowledge: Some unique content here.",
+          text: 'Add this to your knowledge: Some unique content here.',
         },
         entityId: generateMockUuid(32),
         roomId: generateMockUuid(33),
       };
 
-
       // Process all three messages
-      await processKnowledgeAction.handler?.(mockRuntime, textMessage1, mockState, {}, mockCallback);
+      await processKnowledgeAction.handler?.(
+        mockRuntime,
+        textMessage1,
+        mockState,
+        {},
+        mockCallback
+      );
 
       // Change Date.now() mock to generate a different timestamp
       dateNowSpy.mockRestore();
       const dateNowSpy2 = vi.spyOn(Date, 'now').mockReturnValue(1749491066995);
 
-      await processKnowledgeAction.handler?.(mockRuntime, textMessage2, mockState, {}, mockCallback);
+      await processKnowledgeAction.handler?.(
+        mockRuntime,
+        textMessage2,
+        mockState,
+        {},
+        mockCallback
+      );
 
       // Get all calls to addKnowledge
       const addKnowledgeCalls = (mockKnowledgeService.addKnowledge as Mock).mock.calls;
 
       // Extract clientDocumentId's from the knowledgeOptions objects
-      const clientDocumentIds = addKnowledgeCalls.map(call => call[0].clientDocumentId);
+      const clientDocumentIds = addKnowledgeCalls.map((call) => call[0].clientDocumentId);
 
       // Verify we have 2 unique IDs
       expect(clientDocumentIds.length).toBe(2);
@@ -332,11 +381,11 @@ describe('processKnowledgeAction', () => {
 
       // Verify the IDs match the expected patterns
       const [textId1, textId2] = clientDocumentIds;
-      
+
       // Verify both are valid UUID-like strings
       expect(textId1).toMatch(/^[0-9a-f-]+$/);
       expect(textId2).toMatch(/^[0-9a-f-]+$/);
-      
+
       // Verify they are different
       expect(textId1).not.toBe(textId2);
 
@@ -467,13 +516,13 @@ describe('searchKnowledgeAction', () => {
         roomId: generateMockUuid(55),
       };
 
-      const result = await searchKnowledgeAction.handler?.(
+      const result = (await searchKnowledgeAction.handler?.(
         mockRuntime,
         message,
         mockState,
         {},
         mockCallback
-      ) as ActionResult;
+      )) as ActionResult;
 
       // Verify the search was performed
       expect(mockKnowledgeService.getKnowledge).toHaveBeenCalledWith({
@@ -507,13 +556,13 @@ describe('searchKnowledgeAction', () => {
         roomId: generateMockUuid(58),
       };
 
-      const result = await searchKnowledgeAction.handler?.(
+      const result = (await searchKnowledgeAction.handler?.(
         mockRuntime,
         message,
         mockState,
         {},
         mockCallback
-      ) as ActionResult;
+      )) as ActionResult;
 
       expect(result.data?.query).toBe('quantum teleportation');
       expect(result.data?.results).toEqual([]);
@@ -535,13 +584,13 @@ describe('searchKnowledgeAction', () => {
         roomId: generateMockUuid(61),
       };
 
-      const result = await searchKnowledgeAction.handler?.(
+      const result = (await searchKnowledgeAction.handler?.(
         mockRuntime,
         message,
         mockState,
         {},
         mockCallback
-      ) as ActionResult;
+      )) as ActionResult;
 
       expect(result.data?.error).toBe('Search service unavailable');
       expect(result.text).toContain('encountered an error');
@@ -553,7 +602,7 @@ describe('searchKnowledgeAction', () => {
     it('should handle case where only search keywords are provided', async () => {
       // Mock empty results
       (mockKnowledgeService.getKnowledge as Mock).mockResolvedValue([]);
-      
+
       const message: Memory = {
         id: generateMockUuid(62),
         content: {
@@ -563,13 +612,13 @@ describe('searchKnowledgeAction', () => {
         roomId: generateMockUuid(64),
       };
 
-      const result = await searchKnowledgeAction.handler?.(
+      const result = (await searchKnowledgeAction.handler?.(
         mockRuntime,
         message,
         mockState,
         {},
         mockCallback
-      ) as ActionResult;
+      )) as ActionResult;
 
       // The regex doesn't match "search knowledge", so the whole text becomes the query
       expect(mockKnowledgeService.getKnowledge).toHaveBeenCalledWith({
@@ -586,11 +635,11 @@ describe('searchKnowledgeAction', () => {
       const complexResults = [
         {
           id: generateMockUuid(65),
-          content: { 
+          content: {
             text: 'Climate change impacts include rising temperatures and sea levels',
             metadata: { importance: 'high' },
           },
-          metadata: { 
+          metadata: {
             source: 'climate-report-2024.pdf',
             date: '2024-01-15',
             tags: ['climate', 'environment', 'global-warming'],
@@ -598,11 +647,11 @@ describe('searchKnowledgeAction', () => {
         },
         {
           id: generateMockUuid(66),
-          content: { 
+          content: {
             text: 'Renewable energy solutions can mitigate climate effects',
             metadata: { importance: 'medium' },
           },
-          metadata: { 
+          metadata: {
             source: 'renewable-energy.pdf',
             date: '2024-02-01',
             tags: ['renewable', 'solar', 'wind'],
@@ -621,13 +670,13 @@ describe('searchKnowledgeAction', () => {
         roomId: generateMockUuid(69),
       };
 
-      const result = await searchKnowledgeAction.handler?.(
+      const result = (await searchKnowledgeAction.handler?.(
         mockRuntime,
         message,
         mockState,
         {},
         mockCallback
-      ) as ActionResult;
+      )) as ActionResult;
 
       // Verify the result contains all necessary data for downstream actions
       expect(result.data).toMatchObject({
@@ -671,7 +720,7 @@ describe('searchKnowledgeAction', () => {
     it('should return true for various search phrasings', async () => {
       const testCases = [
         'find information in your knowledge',
-        'look up knowledge about AI',  // Changed to include "knowledge"
+        'look up knowledge about AI', // Changed to include "knowledge"
         'query knowledge base for data',
         'what do you know about information systems', // Changed to include both keywords
       ];

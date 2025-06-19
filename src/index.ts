@@ -27,7 +27,7 @@ export const knowledgePlugin: Plugin = {
   schema: knowledgeSchema,
   init: async (config: Record<string, string>, runtime: IAgentRuntime) => {
     logger.info('Initializing Knowledge Plugin...');
-    
+
     // Validate model configuration at plugin initialization
     try {
       await validateModelConfig(runtime);
@@ -36,9 +36,11 @@ export const knowledgePlugin: Plugin = {
       logger.error('Model configuration validation failed:', error);
       throw error;
     }
-    
+
     logger.info(`Knowledge Plugin initialized for agent: ${runtime.agentId}`);
-    logger.info('Knowledge Plugin initialized. Frontend panel should be discoverable via its public route.');
+    logger.info(
+      'Knowledge Plugin initialized. Frontend panel should be discoverable via its public route.'
+    );
   },
 };
 

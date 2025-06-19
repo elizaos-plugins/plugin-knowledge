@@ -1,7 +1,16 @@
 import { describe, it, expect, beforeEach, vi, Mock } from 'vitest';
 import { searchKnowledgeAction } from '../../actions';
 import { KnowledgeService } from '../../service';
-import type { IAgentRuntime, Memory, Content, State, UUID, ActionResult, Action, Handler } from '@elizaos/core';
+import type {
+  IAgentRuntime,
+  Memory,
+  Content,
+  State,
+  UUID,
+  ActionResult,
+  Action,
+  Handler,
+} from '@elizaos/core';
 
 // Mock @elizaos/core logger
 vi.mock('@elizaos/core', async () => {
@@ -77,7 +86,9 @@ describe('Action Chaining with Knowledge Plugin', () => {
         },
         {
           id: generateMockUuid(2),
-          content: { text: 'Quantum superposition allows qubits to exist in multiple states simultaneously.' },
+          content: {
+            text: 'Quantum superposition allows qubits to exist in multiple states simultaneously.',
+          },
           metadata: { source: 'quantum-theory.pdf' },
         },
         {
@@ -99,13 +110,13 @@ describe('Action Chaining with Knowledge Plugin', () => {
       };
 
       // Execute search action
-      const searchResult = await searchKnowledgeAction.handler?.(
+      const searchResult = (await searchKnowledgeAction.handler?.(
         mockRuntime,
         searchMessage,
         mockState,
         {},
         mockCallback
-      ) as ActionResult;
+      )) as ActionResult;
 
       // Verify search action returns proper ActionResult
       expect(searchResult).toBeDefined();
@@ -146,13 +157,13 @@ describe('Action Chaining with Knowledge Plugin', () => {
         roomId: generateMockUuid(11),
       };
 
-      const searchResult = await searchKnowledgeAction.handler?.(
+      const searchResult = (await searchKnowledgeAction.handler?.(
         mockRuntime,
         searchMessage,
         mockState,
         {},
         mockCallback
-      ) as ActionResult;
+      )) as ActionResult;
 
       // Now use search results in analyze action
       const analyzeMessage: Memory = {
@@ -171,7 +182,7 @@ describe('Action Chaining with Knowledge Plugin', () => {
           const searchData = message.content.data;
           expect(searchData).toBeDefined();
           expect(searchData.results).toHaveLength(2);
-          
+
           // Perform analysis on search results
           const analysis = {
             totalResults: searchData.count,
@@ -200,13 +211,13 @@ describe('Action Chaining with Knowledge Plugin', () => {
       );
 
       // Execute analyze action with search results
-      const analyzeResult = await mockAnalyzeAction.handler(
+      const analyzeResult = (await mockAnalyzeAction.handler(
         mockRuntime,
         analyzeMessage,
         mockState,
         {},
         mockCallback
-      ) as ActionResult;
+      )) as ActionResult;
 
       // Verify analysis results
       expect(analyzeResult).toBeDefined();
@@ -221,22 +232,30 @@ describe('Action Chaining with Knowledge Plugin', () => {
       const mockSearchResults = [
         {
           id: generateMockUuid(15),
-          content: { text: 'Climate change is primarily driven by greenhouse gas emissions from human activities.' },
+          content: {
+            text: 'Climate change is primarily driven by greenhouse gas emissions from human activities.',
+          },
           metadata: { source: 'climate-causes.pdf' },
         },
         {
           id: generateMockUuid(16),
-          content: { text: 'Rising global temperatures lead to melting ice caps and rising sea levels.' },
+          content: {
+            text: 'Rising global temperatures lead to melting ice caps and rising sea levels.',
+          },
           metadata: { source: 'climate-effects.pdf' },
         },
         {
           id: generateMockUuid(17),
-          content: { text: 'Renewable energy sources like solar and wind can help mitigate climate change.' },
+          content: {
+            text: 'Renewable energy sources like solar and wind can help mitigate climate change.',
+          },
           metadata: { source: 'climate-solutions.pdf' },
         },
         {
           id: generateMockUuid(18),
-          content: { text: 'International cooperation through agreements like the Paris Climate Accord is essential.' },
+          content: {
+            text: 'International cooperation through agreements like the Paris Climate Accord is essential.',
+          },
           metadata: { source: 'climate-policy.pdf' },
         },
       ];
@@ -251,13 +270,13 @@ describe('Action Chaining with Knowledge Plugin', () => {
         roomId: generateMockUuid(21),
       };
 
-      const searchResult = await searchKnowledgeAction.handler?.(
+      const searchResult = (await searchKnowledgeAction.handler?.(
         mockRuntime,
         searchMessage,
         mockState,
         {},
         mockCallback
-      ) as ActionResult;
+      )) as ActionResult;
 
       // Use search results in summarize action
       const summarizeMessage: Memory = {
@@ -276,7 +295,7 @@ describe('Action Chaining with Knowledge Plugin', () => {
           const searchData = message.content.data;
           expect(searchData).toBeDefined();
           expect(searchData.results).toHaveLength(4);
-          
+
           // Create summary from search results
           const summary = {
             mainPoints: [
@@ -286,7 +305,8 @@ describe('Action Chaining with Knowledge Plugin', () => {
               'International cooperation is key',
             ],
             sources: searchData.results.length,
-            condensedText: 'Climate change, driven by human emissions, causes rising temperatures and sea levels. Solutions include renewable energy and international cooperation.',
+            condensedText:
+              'Climate change, driven by human emissions, causes rising temperatures and sea levels. Solutions include renewable energy and international cooperation.',
           };
 
           const response: Content = {
@@ -305,13 +325,13 @@ describe('Action Chaining with Knowledge Plugin', () => {
       );
 
       // Execute summarize action
-      const summarizeResult = await mockSummarizeAction.handler(
+      const summarizeResult = (await mockSummarizeAction.handler(
         mockRuntime,
         summarizeMessage,
         mockState,
         {},
         mockCallback
-      ) as ActionResult;
+      )) as ActionResult;
 
       // Verify summary results
       expect(summarizeResult).toBeDefined();
@@ -332,13 +352,13 @@ describe('Action Chaining with Knowledge Plugin', () => {
         roomId: generateMockUuid(27),
       };
 
-      const searchResult = await searchKnowledgeAction.handler?.(
+      const searchResult = (await searchKnowledgeAction.handler?.(
         mockRuntime,
         searchMessage,
         mockState,
         {},
         mockCallback
-      ) as ActionResult;
+      )) as ActionResult;
 
       // Verify empty results
       expect(searchResult.data?.results).toEqual([]);
@@ -358,16 +378,16 @@ describe('Action Chaining with Knowledge Plugin', () => {
       (mockAnalyzeAction.handler as Mock).mockImplementation(
         async (runtime, message, state, options, callback) => {
           const searchData = message.content.data;
-          
+
           if (searchData.count === 0) {
             const response: Content = {
               text: 'No results to analyze.',
             };
-            
+
             if (callback) {
               await callback(response);
             }
-            
+
             return {
               data: { analysis: { message: 'No data available for analysis' } },
               text: response.text,
@@ -376,13 +396,13 @@ describe('Action Chaining with Knowledge Plugin', () => {
         }
       );
 
-      const analyzeResult = await mockAnalyzeAction.handler(
+      const analyzeResult = (await mockAnalyzeAction.handler(
         mockRuntime,
         analyzeMessage,
         mockState,
         {},
         mockCallback
-      ) as ActionResult;
+      )) as ActionResult;
 
       expect(analyzeResult.data?.analysis.message).toBe('No data available for analysis');
     });
@@ -392,7 +412,7 @@ describe('Action Chaining with Knowledge Plugin', () => {
       const broadSearchResults = Array.from({ length: 10 }, (_, i) => ({
         id: generateMockUuid(100 + i),
         content: { text: `AI concept ${i + 1}: Various aspects of artificial intelligence.` },
-        metadata: { 
+        metadata: {
           source: `ai-doc-${i + 1}.pdf`,
           relevance: Math.random(),
           category: i < 5 ? 'machine-learning' : 'neural-networks',
@@ -402,7 +422,7 @@ describe('Action Chaining with Knowledge Plugin', () => {
       (mockKnowledgeService.getKnowledge as Mock).mockResolvedValue(broadSearchResults);
 
       // Step 1: Initial search
-      const searchResult = await searchKnowledgeAction.handler?.(
+      const searchResult = (await searchKnowledgeAction.handler?.(
         mockRuntime,
         {
           id: generateMockUuid(31),
@@ -413,7 +433,7 @@ describe('Action Chaining with Knowledge Plugin', () => {
         mockState,
         {},
         mockCallback
-      ) as ActionResult;
+      )) as ActionResult;
 
       expect(searchResult.data?.count).toBe(10);
 
@@ -424,10 +444,10 @@ describe('Action Chaining with Knowledge Plugin', () => {
         validate: vi.fn().mockResolvedValue(true),
         handler: vi.fn().mockImplementation(async (runtime, message, state, options, callback) => {
           const searchData = message.content.data;
-          const filtered = searchData.results.filter((r: any) => 
-            r.metadata.category === 'machine-learning'
+          const filtered = searchData.results.filter(
+            (r: any) => r.metadata.category === 'machine-learning'
           );
-          
+
           return {
             data: {
               results: filtered,
@@ -440,7 +460,7 @@ describe('Action Chaining with Knowledge Plugin', () => {
       };
 
       // Step 3: Apply filter
-      const filterResult = await mockFilterAction.handler(
+      const filterResult = (await mockFilterAction.handler(
         mockRuntime,
         {
           id: generateMockUuid(34),
@@ -454,7 +474,7 @@ describe('Action Chaining with Knowledge Plugin', () => {
         mockState,
         {},
         mockCallback
-      ) as ActionResult;
+      )) as ActionResult;
 
       expect(filterResult.data?.count).toBe(5);
       expect(filterResult.data?.filterCriteria).toBe('category=machine-learning');
@@ -466,10 +486,10 @@ describe('Action Chaining with Knowledge Plugin', () => {
         validate: vi.fn().mockResolvedValue(true),
         handler: vi.fn().mockImplementation(async (runtime, message, state, options, callback) => {
           const data = message.content.data;
-          const ranked = [...data.results].sort((a: any, b: any) => 
-            b.metadata.relevance - a.metadata.relevance
+          const ranked = [...data.results].sort(
+            (a: any, b: any) => b.metadata.relevance - a.metadata.relevance
           );
-          
+
           return {
             data: {
               results: ranked.slice(0, 3), // Top 3
@@ -482,7 +502,7 @@ describe('Action Chaining with Knowledge Plugin', () => {
       };
 
       // Step 5: Apply ranking
-      const rankResult = await mockRankAction.handler(
+      const rankResult = (await mockRankAction.handler(
         mockRuntime,
         {
           id: generateMockUuid(37),
@@ -496,15 +516,15 @@ describe('Action Chaining with Knowledge Plugin', () => {
         mockState,
         {},
         mockCallback
-      ) as ActionResult;
+      )) as ActionResult;
 
       expect(rankResult.data?.count).toBe(3);
       expect(rankResult.data?.ranking).toBe('relevance-descending');
 
       // Verify the chain maintained data integrity
       expect(searchResult.data?.count).toBe(10); // Original
-      expect(filterResult.data?.count).toBe(5);  // After filter
-      expect(rankResult.data?.count).toBe(3);    // After ranking
+      expect(filterResult.data?.count).toBe(5); // After filter
+      expect(rankResult.data?.count).toBe(3); // After ranking
     });
   });
 
@@ -521,13 +541,13 @@ describe('Action Chaining with Knowledge Plugin', () => {
         roomId: generateMockUuid(42),
       };
 
-      const searchResult = await searchKnowledgeAction.handler?.(
+      const searchResult = (await searchKnowledgeAction.handler?.(
         mockRuntime,
         searchMessage,
         mockState,
         {},
         mockCallback
-      ) as ActionResult;
+      )) as ActionResult;
 
       // Verify error is captured in ActionResult
       expect(searchResult.data?.error).toBe('Database connection failed');
@@ -537,13 +557,13 @@ describe('Action Chaining with Knowledge Plugin', () => {
       (mockAnalyzeAction.handler as Mock).mockImplementation(
         async (runtime, message, state, options, callback) => {
           const data = message.content.data;
-          
+
           if (data?.error) {
             return {
-              data: { 
-                analysis: { 
-                  error: `Cannot analyze due to upstream error: ${data.error}` 
-                } 
+              data: {
+                analysis: {
+                  error: `Cannot analyze due to upstream error: ${data.error}`,
+                },
               },
               text: 'Analysis failed due to search error.',
             };
@@ -551,7 +571,7 @@ describe('Action Chaining with Knowledge Plugin', () => {
         }
       );
 
-      const analyzeResult = await mockAnalyzeAction.handler(
+      const analyzeResult = (await mockAnalyzeAction.handler(
         mockRuntime,
         {
           id: generateMockUuid(43),
@@ -565,9 +585,9 @@ describe('Action Chaining with Knowledge Plugin', () => {
         mockState,
         {},
         mockCallback
-      ) as ActionResult;
+      )) as ActionResult;
 
       expect(analyzeResult.data?.analysis.error).toContain('Cannot analyze due to upstream error');
     });
   });
-}); 
+});

@@ -150,30 +150,27 @@ export function MemoryGraph({ memories, onNodeClick, selectedMemoryId }: MemoryG
   }, [selectedMemoryId, initialized, graphData.nodes]);
 
   // Graph initialization and configuration
-  const handleGraphInit = useCallback(
-    (graph: ForceGraphMethods<MemoryNode, MemoryLink>) => {
-      graphRef.current = graph;
+  const handleGraphInit = useCallback((graph: ForceGraphMethods<MemoryNode, MemoryLink>) => {
+    graphRef.current = graph;
 
-      // Configure the graph force simulation only if graphRef is defined
-      if (graph) {
-        const chargeForce = graph.d3Force('charge');
-        if (chargeForce) {
-          chargeForce.strength(-120); // Repulsion force
-        }
-
-        const linkForce = graph.d3Force('link');
-        if (linkForce) {
-          linkForce.distance(50); // Distance between nodes
-        }
-
-        // Ensure the graph is centered and scaled to fit the container
-        graph.zoomToFit(400); // Optional duration of 400ms for smooth transition
-
-        setInitialized(true);
+    // Configure the graph force simulation only if graphRef is defined
+    if (graph) {
+      const chargeForce = graph.d3Force('charge');
+      if (chargeForce) {
+        chargeForce.strength(-120); // Repulsion force
       }
-    },
-    []
-  );
+
+      const linkForce = graph.d3Force('link');
+      if (linkForce) {
+        linkForce.distance(50); // Distance between nodes
+      }
+
+      // Ensure the graph is centered and scaled to fit the container
+      graph.zoomToFit(400); // Optional duration of 400ms for smooth transition
+
+      setInitialized(true);
+    }
+  }, []);
 
   // Legend
   const renderLegend = () => (

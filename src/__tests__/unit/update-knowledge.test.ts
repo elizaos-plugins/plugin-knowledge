@@ -37,7 +37,8 @@ describe('Knowledge Update Operations', () => {
         return false;
       }),
       createMemory: vi.fn(async (memory: Memory, tableName?: string) => {
-        const id = memory.id || (`mem-${Date.now()}-${Math.random().toString(36).substr(2, 9)}` as UUID);
+        const id =
+          memory.id || (`mem-${Date.now()}-${Math.random().toString(36).substr(2, 9)}` as UUID);
         memories.set(id, { ...memory, id });
         return id;
       }),
@@ -154,9 +155,9 @@ describe('Knowledge Update Operations', () => {
       const docIds = [
         'doc-1111-2222-3333-4444-555555555555',
         'doc-2222-3333-4444-5555-666666666666',
-        'doc-3333-4444-5555-6666-777777777777'
+        'doc-3333-4444-5555-6666-777777777777',
       ] as UUID[];
-      
+
       // Create test documents
       for (const docId of docIds) {
         memories.set(docId, {
@@ -185,9 +186,9 @@ describe('Knowledge Update Operations', () => {
       const docIds = [
         'exists-1111-2222-3333-4444-555555555555',
         'notexist-11-2222-3333-4444-555555555555',
-        'exists-2222-3333-4444-5555-666666666666'
+        'exists-2222-3333-4444-5555-666666666666',
       ] as UUID[];
-      
+
       // Only create some documents
       memories.set(docIds[0], {
         id: docIds[0],
@@ -217,7 +218,7 @@ describe('Knowledge Update Operations', () => {
         }
       }
 
-      const successCount = results.filter(r => r.success).length;
+      const successCount = results.filter((r) => r.success).length;
       expect(successCount).toBe(3); // All deletes succeed regardless of existence
       expect(memories.size).toBe(0);
     });
@@ -238,7 +239,7 @@ describe('Knowledge Update Operations', () => {
         agentId: mockRuntime.agentId,
         roomId: mockRuntime.agentId,
         entityId: mockRuntime.agentId,
-        content: { 
+        content: {
           text: 'Content from PDF would be extracted here',
           source: attachment.url,
         },
@@ -251,7 +252,7 @@ describe('Knowledge Update Operations', () => {
       };
 
       await mockRuntime.createMemory(attachmentMemory, 'memories');
-      
+
       const created = memories.get(attachmentMemory.id!);
       expect(created).toBeDefined();
       expect(created?.metadata?.source).toBe('message-attachment');
@@ -270,7 +271,7 @@ describe('Knowledge Update Operations', () => {
         agentId: mockRuntime.agentId,
         roomId: mockRuntime.agentId,
         entityId: mockRuntime.agentId,
-        content: { 
+        content: {
           text: attachment.data,
         },
         metadata: {
@@ -282,11 +283,11 @@ describe('Knowledge Update Operations', () => {
       };
 
       await mockRuntime.createMemory(attachmentMemory, 'memories');
-      
+
       const created = memories.get(attachmentMemory.id!);
       expect(created).toBeDefined();
       expect(created?.content.text).toBe(attachment.data);
       expect(created?.metadata?.tags).toContain('direct-data');
     });
   });
-}); 
+});
