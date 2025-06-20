@@ -235,13 +235,32 @@ const searchResults = await knowledgeService.searchKnowledge({
 ### File Upload Configuration
 
 #### Automatic MIME Type Correction
-The frontend automatically corrects MIME types for code and document files:
+The frontend automatically corrects MIME types for code and document files to ensure proper processing:
 
 ```typescript
 const getCorrectMimeType = (file: File): string => {
-  // MIME type correction logic
-  // Particularly useful for .ts, .js, .py, etc. files
-}
+  const filename = file.name.toLowerCase();
+  const ext = filename.split('.').pop() || '';
+
+  // Map common text file extensions to text/plain
+  const textExtensions = [
+    'ts', 'tsx', 'js', 'jsx', 'mjs', 'cjs',
+    'py', 'pyw', 'pyi', 'java', 'c', 'cpp', 'cc', 'cxx', 'h', 'hpp',
+    'cs', 'php', 'rb', 'go', 'rs', 'swift', 'kt', 'kts', 'scala',
+    // ... and many more
+  ];
+
+  if (textExtensions.includes(ext)) {
+    return 'text/plain';
+  } else if (['md', 'markdown'].includes(ext)) {
+    return 'text/markdown';
+  } else if (ext === 'json') {
+    return 'application/json';
+  }
+  // ... additional mappings
+
+  return file.type || 'application/octet-stream';
+};
 ```
 
 #### Supported File Types

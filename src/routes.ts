@@ -362,8 +362,9 @@ async function uploadKnowledgeHandler(req: any, res: any, runtime: IAgentRuntime
     }
   } catch (error: any) {
     logger.error('[KNOWLEDGE HANDLER] Error processing knowledge:', error);
-    if (hasUploadedFiles) {
-      cleanupFiles(req.files as UploadedFile[]);
+    if (hasUploadedFiles && req.files) {
+      const allFiles = Object.values(req.files).flat() as UploadedFile[];
+      cleanupFiles(allFiles);
     }
     sendError(res, 500, 'PROCESSING_ERROR', 'Failed to process knowledge', error.message);
   }
