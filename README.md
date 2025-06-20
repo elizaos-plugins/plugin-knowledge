@@ -232,6 +232,25 @@ const searchResults = await knowledgeService.searchKnowledge({
 - **Contextual mode = better understanding** (but slower processing)
 - **Batch document uploads** rather than one-by-one for better performance
 
+### File Upload Configuration
+
+#### Automatic MIME Type Correction
+The frontend automatically corrects MIME types for code and document files:
+
+```typescript
+const getCorrectMimeType = (file: File): string => {
+  // MIME type correction logic
+  // Particularly useful for .ts, .js, .py, etc. files
+}
+```
+
+#### Supported File Types
+
+- **Documents**: PDF, DOC, DOCX
+- **Code**: JS, TS, PY, JAVA, C, CPP, etc.
+- **Text**: TXT, MD, CSV, JSON, XML, HTML
+- **Configuration**: ENV, CFG, INI, YAML, YML
+
 </details>
 
 ## 📝 License
