@@ -844,7 +844,7 @@ async function searchKnowledgeHandler(req: any, res: any, runtime: IAgentRuntime
   }
 }
 
-async function uploadKnowledgeWithMulter(req: any, res: any, runtime: IAgentRuntime) {
+async function handleKnowledgeUpload(req: any, res: any, runtime: IAgentRuntime) {
   logger.debug('[KNOWLEDGE UPLOAD] Starting upload handler');
   
   logger.debug('[KNOWLEDGE UPLOAD] Request details:', {
@@ -883,7 +883,7 @@ export const knowledgeRoutes: Route[] = [
   {
     type: 'POST',
     path: '/documents',
-    handler: uploadKnowledgeWithMulter,
+    handler: handleKnowledgeUpload,
   },
   {
     type: 'GET',
