@@ -858,7 +858,7 @@ async function handleKnowledgeUpload(req: any, res: any, runtime: IAgentRuntime)
   
   try {
     logger.debug('[KNOWLEDGE UPLOAD] Using files parsed by global middleware');
-    uploadKnowledgeHandler(req, res, runtime);
+    await uploadKnowledgeHandler(req, res, runtime);
   } catch (handlerError: any) {
     logger.error('[KNOWLEDGE UPLOAD] Handler error:', handlerError);
     if (!res.headersSent) {
