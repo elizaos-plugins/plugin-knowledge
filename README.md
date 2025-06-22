@@ -232,6 +232,44 @@ const searchResults = await knowledgeService.searchKnowledge({
 - **Contextual mode = better understanding** (but slower processing)
 - **Batch document uploads** rather than one-by-one for better performance
 
+### File Upload Configuration
+
+#### Automatic MIME Type Correction
+The frontend automatically corrects MIME types for code and document files to ensure proper processing:
+
+```typescript
+const getCorrectMimeType = (file: File): string => {
+  const filename = file.name.toLowerCase();
+  const ext = filename.split('.').pop() || '';
+
+  // Map common text file extensions to text/plain
+  const textExtensions = [
+    'ts', 'tsx', 'js', 'jsx', 'mjs', 'cjs',
+    'py', 'pyw', 'pyi', 'java', 'c', 'cpp', 'cc', 'cxx', 'h', 'hpp',
+    'cs', 'php', 'rb', 'go', 'rs', 'swift', 'kt', 'kts', 'scala',
+    // ... and many more
+  ];
+
+  if (textExtensions.includes(ext)) {
+    return 'text/plain';
+  } else if (['md', 'markdown'].includes(ext)) {
+    return 'text/markdown';
+  } else if (ext === 'json') {
+    return 'application/json';
+  }
+  // ... additional mappings
+
+  return file.type || 'application/octet-stream';
+};
+```
+
+#### Supported File Types
+
+- **Documents**: PDF, DOC, DOCX
+- **Code**: JS, TS, PY, JAVA, C, CPP, etc.
+- **Text**: TXT, MD, CSV, JSON, XML, HTML
+- **Configuration**: ENV, CFG, INI, YAML, YML
+
 </details>
 
 ## 📝 License

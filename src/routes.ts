@@ -3,57 +3,19 @@ import { MemoryType, createUniqueUuid, logger, ModelType } from '@elizaos/core';
 import { KnowledgeService } from './service';
 import fs from 'node:fs'; // For file operations in upload
 import path from 'node:path'; // For path operations
-import multer from 'multer'; // For handling multipart uploads
 import { fetchUrlContent, normalizeS3Url } from './utils'; // Import utils functions
 
-// Create multer configuration function that uses runtime settings
-const createUploadMiddleware = (runtime: IAgentRuntime) => {
-  const uploadDir = runtime.getSetting('KNOWLEDGE_UPLOAD_DIR') || '/tmp/uploads/';
-  const maxFileSize = parseInt(runtime.getSetting('KNOWLEDGE_MAX_FILE_SIZE') || '52428800'); // 50MB default
-  const maxFiles = parseInt(runtime.getSetting('KNOWLEDGE_MAX_FILES') || '10');
-  const allowedMimeTypes = runtime.getSetting('KNOWLEDGE_ALLOWED_MIME_TYPES')?.split(',') || [
-    'text/plain',
-    'text/markdown',
-    'application/pdf',
-    'application/msword',
-    'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
-    'text/html',
-    'application/json',
-    'application/xml',
-    'text/csv',
-  ];
-
-  return multer({
-    dest: uploadDir,
-    limits: {
-      fileSize: maxFileSize,
-      files: maxFiles,
-    },
-    fileFilter: (req, file, cb) => {
-      if (allowedMimeTypes.includes(file.mimetype)) {
-        cb(null, true);
-      } else {
-        cb(
-          new Error(
-            `File type ${file.mimetype} not allowed. Allowed types: ${allowedMimeTypes.join(', ')}`
-          )
-        );
-      }
-    },
-  });
-};
-
-// Add this type declaration to fix Express.Multer.File error
-interface MulterFile {
-  fieldname: string;
-  originalname: string;
-  encoding: string;
-  mimetype: string;
+// Update type declaration for express-fileupload
+interface UploadedFile {
+  name: string;
+  data?: Buffer;
   size: number;
-  destination: string;
-  filename: string;
-  path: string;
-  buffer: Buffer;
+  encoding: string;
+  tempFilePath?: string;
+  truncated: boolean;
+  mimetype: string;
+  md5: string;
+  mv: (path: string) => Promise<void>;
 }
 
 // Helper to send success response
@@ -80,13 +42,17 @@ const cleanupFile = (filePath: string) => {
 };
 
 // Helper to clean up multiple files
-const cleanupFiles = (files: MulterFile[]) => {
+const cleanupFiles = (files: UploadedFile[]) => {
   if (files) {
-    files.forEach((file) => cleanupFile(file.path));
+    files.forEach((file) => {
+      if (file.tempFilePath) {
+        cleanupFile(file.tempFilePath);
+      }
+    });
   }
 };
 
-// Main upload handler (without multer, multer is applied by wrapper)
+// Main upload handler (without middleware, middleware is applied by wrapper)
 async function uploadKnowledgeHandler(req: any, res: any, runtime: IAgentRuntime) {
   const service = runtime.getService<KnowledgeService>(KnowledgeService.serviceType);
   if (!service) {
@@ -94,7 +60,7 @@ async function uploadKnowledgeHandler(req: any, res: any, runtime: IAgentRuntime
   }
 
   // Check if the request has uploaded files or URLs
-  const hasUploadedFiles = req.files && req.files.length > 0;
+  const hasUploadedFiles = req.files && Object.keys(req.files).length > 0;
   const isJsonRequest = !hasUploadedFiles && req.body && (req.body.fileUrl || req.body.fileUrls);
 
   if (!hasUploadedFiles && !isJsonRequest) {
@@ -104,9 +70,59 @@ async function uploadKnowledgeHandler(req: any, res: any, runtime: IAgentRuntime
   try {
     // Process multipart requests (file uploads)
     if (hasUploadedFiles) {
-      const files = req.files as MulterFile[];
+      let files: UploadedFile[] = [];
+      
+      // Handle both single file and multiple files
+      if (req.files.files) {
+        if (Array.isArray(req.files.files)) {
+          files = req.files.files as UploadedFile[];
+        } else {
+          files = [req.files.files as UploadedFile];
+        }
+      } else if (req.files.file) {
+        files = [req.files.file as UploadedFile];
+      } else {
+        // Fallback: get all files from req.files
+        files = Object.values(req.files).flat() as UploadedFile[];
+      }
+
       if (!files || files.length === 0) {
         return sendError(res, 400, 'NO_FILES', 'No files uploaded');
+      }
+
+      // Validate files for corruption/truncation
+      const invalidFiles = files.filter(file => {
+        // Check for truncated files
+        if (file.truncated) {
+          logger.warn(`File ${file.name} was truncated during upload`);
+          return true;
+        }
+        
+        // Check for empty files
+        if (file.size === 0) {
+          logger.warn(`File ${file.name} is empty`);
+          return true;
+        }
+        
+        // Check if file has a name
+        if (!file.name || file.name.trim() === '') {
+          logger.warn(`File has no name`);
+          return true;
+        }
+        
+        // Check if file has valid data or temp file path
+        if (!file.data && !file.tempFilePath) {
+          logger.warn(`File ${file.name} has no data or temp file path`);
+          return true;
+        }
+        
+        return false;
+      });
+
+      if (invalidFiles.length > 0) {
+        cleanupFiles(files);
+        const invalidFileNames = invalidFiles.map(f => f.name || 'unnamed').join(', ');
+        return sendError(res, 400, 'INVALID_FILES', `Invalid or corrupted files: ${invalidFileNames}`);
       }
 
       // Get agentId from request body or query parameter BEFORE processing files
@@ -115,6 +131,7 @@ async function uploadKnowledgeHandler(req: any, res: any, runtime: IAgentRuntime
 
       if (!agentId) {
         logger.error('[KNOWLEDGE UPLOAD HANDLER] No agent ID provided in request');
+        cleanupFiles(files);
         return sendError(
           res,
           400,
@@ -128,8 +145,8 @@ async function uploadKnowledgeHandler(req: any, res: any, runtime: IAgentRuntime
 
       const processingPromises = files.map(async (file, index) => {
         let knowledgeId: UUID;
-        const originalFilename = file.originalname;
-        const filePath = file.path;
+        const originalFilename = file.name;
+        const filePath = file.tempFilePath;
 
         knowledgeId =
           (req.body?.documentIds && req.body.documentIds[index]) ||
@@ -141,15 +158,51 @@ async function uploadKnowledgeHandler(req: any, res: any, runtime: IAgentRuntime
         );
 
         try {
-          const fileBuffer = await fs.promises.readFile(filePath);
+          let fileBuffer: Buffer;
+          
+          // The global middleware uses tempFiles by default, so prioritize tempFilePath
+          if (filePath && fs.existsSync(filePath)) {
+            // Read from temporary file (most common case with global middleware)
+            try {
+              const stats = await fs.promises.stat(filePath);
+              if (stats.size === 0) {
+                throw new Error('Temporary file is empty');
+              }
+              fileBuffer = await fs.promises.readFile(filePath);
+              logger.debug(`[KNOWLEDGE UPLOAD] Read ${fileBuffer.length} bytes from temp file: ${filePath}`);
+            } catch (fsError: any) {
+              throw new Error(`Failed to read temporary file: ${fsError.message}`);
+            }
+          } else if (file.data && Buffer.isBuffer(file.data)) {
+            // Fallback to in-memory buffer if available
+            fileBuffer = file.data;
+            logger.debug(`[KNOWLEDGE UPLOAD] Using in-memory buffer of ${fileBuffer.length} bytes`);
+          } else {
+            throw new Error('No file data available - neither temp file nor buffer found');
+          }
+
+          // Validate file buffer
+          if (!Buffer.isBuffer(fileBuffer) || fileBuffer.length === 0) {
+            throw new Error('Invalid or empty file buffer');
+          }
+
+          // Additional buffer validation
+          if (fileBuffer.length !== file.size) {
+            logger.warn(`File size mismatch for ${originalFilename}: expected ${file.size}, got ${fileBuffer.length}`);
+          }
+
+          // Convert to base64
           const base64Content = fileBuffer.toString('base64');
+          if (!base64Content || base64Content.length === 0) {
+            throw new Error('Failed to convert file to base64');
+          }
 
           // Construct AddKnowledgeOptions directly using available variables
           const addKnowledgeOpts: import('./types.ts').AddKnowledgeOptions = {
             agentId: agentId, // Pass the agent ID from frontend
             clientDocumentId: knowledgeId, // This is knowledgeItem.id
-            contentType: file.mimetype, // Directly from multer file object
-            originalFilename: originalFilename, // Directly from multer file object
+            contentType: file.mimetype, // Directly from express-fileupload file object
+            originalFilename: originalFilename, // Directly from express-fileupload file object
             content: base64Content, // The base64 string of the file
             worldId,
             roomId: agentId, // Use the correct agent ID
@@ -158,7 +211,10 @@ async function uploadKnowledgeHandler(req: any, res: any, runtime: IAgentRuntime
 
           await service.addKnowledge(addKnowledgeOpts);
 
-          cleanupFile(filePath);
+          if (filePath) {
+            cleanupFile(filePath);
+          }
+          
           return {
             id: knowledgeId,
             filename: originalFilename,
@@ -169,9 +225,11 @@ async function uploadKnowledgeHandler(req: any, res: any, runtime: IAgentRuntime
           };
         } catch (fileError: any) {
           logger.error(
-            `[KNOWLEDGE UPLOAD HANDLER] Error processing file ${file.originalname}: ${fileError}`
+            `[KNOWLEDGE UPLOAD HANDLER] Error processing file ${file.name}: ${fileError}`
           );
-          cleanupFile(filePath);
+          if (filePath) {
+            cleanupFile(filePath);
+          }
           return {
             id: knowledgeId,
             filename: originalFilename,
@@ -304,8 +362,9 @@ async function uploadKnowledgeHandler(req: any, res: any, runtime: IAgentRuntime
     }
   } catch (error: any) {
     logger.error('[KNOWLEDGE HANDLER] Error processing knowledge:', error);
-    if (hasUploadedFiles) {
-      cleanupFiles(req.files as MulterFile[]);
+    if (hasUploadedFiles && req.files) {
+      const allFiles = Object.values(req.files).flat() as UploadedFile[];
+      cleanupFiles(allFiles);
     }
     sendError(res, 500, 'PROCESSING_ERROR', 'Failed to process knowledge', error.message);
   }
@@ -786,23 +845,27 @@ async function searchKnowledgeHandler(req: any, res: any, runtime: IAgentRuntime
   }
 }
 
-// Wrapper handler that applies multer middleware before calling the upload handler
-async function uploadKnowledgeWithMulter(req: any, res: any, runtime: IAgentRuntime) {
-  const upload = createUploadMiddleware(runtime);
-  const uploadArray = upload.array(
-    'files',
-    parseInt(runtime.getSetting('KNOWLEDGE_MAX_FILES') || '10')
-  );
-
-  // Apply multer middleware manually
-  uploadArray(req, res, (err: any) => {
-    if (err) {
-      logger.error('[KNOWLEDGE UPLOAD] Multer error:', err);
-      return sendError(res, 400, 'UPLOAD_ERROR', err.message);
-    }
-    // If multer succeeded, call the actual handler
-    uploadKnowledgeHandler(req, res, runtime);
+async function handleKnowledgeUpload(req: any, res: any, runtime: IAgentRuntime) {
+  logger.debug('[KNOWLEDGE UPLOAD] Starting upload handler');
+  
+  logger.debug('[KNOWLEDGE UPLOAD] Request details:', {
+    method: req.method,
+    url: req.url,
+    contentType: req.headers['content-type'],
+    contentLength: req.headers['content-length'],
+    hasFiles: req.files ? Object.keys(req.files).length : 0,
+    hasBody: req.body ? Object.keys(req.body).length : 0
   });
+  
+  try {
+    logger.debug('[KNOWLEDGE UPLOAD] Using files parsed by global middleware');
+    await uploadKnowledgeHandler(req, res, runtime);
+  } catch (handlerError: any) {
+    logger.error('[KNOWLEDGE UPLOAD] Handler error:', handlerError);
+    if (!res.headersSent) {
+      sendError(res, 500, 'HANDLER_ERROR', 'Failed to process upload');
+    }
+  }
 }
 
 export const knowledgeRoutes: Route[] = [
@@ -821,7 +884,7 @@ export const knowledgeRoutes: Route[] = [
   {
     type: 'POST',
     path: '/documents',
-    handler: uploadKnowledgeWithMulter,
+    handler: handleKnowledgeUpload,
   },
   {
     type: 'GET',
