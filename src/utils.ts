@@ -3,6 +3,8 @@ import * as mammoth from 'mammoth';
 import { logger } from '@elizaos/core';
 import { getDocument, PDFDocumentProxy } from 'pdfjs-dist/legacy/build/pdf.mjs';
 import type { TextItem, TextMarkedContent } from 'pdfjs-dist/types/src/display/api';
+import { createHash } from 'crypto';
+import { v5 as uuidv5 } from 'uuid';
 
 const PLAIN_TEXT_CONTENT_TYPES = [
   'application/typescript',
@@ -420,5 +422,96 @@ export function looksLikeBase64(content?: string | null): boolean {
   // const base64Regex = /^[A-Za-z0-9+/]+=*$/; // This is the old regex
   // https://stackoverflow.com/questions/475074/regex-to-parse-or-validate-base64-data
   const base64Regex = /^(?:[A-Za-z0-9+/]{4})*(?:[A-Za-z0-9+/]{2}==|[A-Za-z0-9+/]{3}=)?$/;
-  return content && content.length > 0 && base64Regex.test(content.replace(/\s/g, '')) || false;
+  return (content && content.length > 0 && base64Regex.test(content.replace(/\s/g, ''))) || false;
+}
+
+/**
+ * Generates a consistent UUID for a document based on its content.
+ * Takes the first N characters/lines of the document and creates a hash-based UUID.
+ * This ensures the same document always gets the same ID, preventing duplicates.
+ *
+ * @param content The document content (text or base64)
+ * @param agentId The agent ID to namespace the document
+ * @param options Optional configuration for ID generation
+ * @returns A deterministic UUID based on the content
+ */
+export function generateContentBasedId(
+  content: string,
+  agentId: string,
+  options?: {
+    maxChars?: number;
+    includeFilename?: string;
+    contentType?: string;
+  }
+): string {
+  const {
+    maxChars = 2000, // Use first 2000 chars by default
+    includeFilename,
+    contentType,
+  } = options || {};
+
+  // For consistent hashing, we need to normalize the content
+  let contentForHashing: string;
+
+  // If it's base64, decode it first to get actual content
+  if (looksLikeBase64(content)) {
+    try {
+      const decoded = Buffer.from(content, 'base64').toString('utf8');
+      // Check if decoded content is readable text
+      if (!decoded.includes('\ufffd') || contentType?.includes('pdf')) {
+        // For PDFs and other binary files, use a portion of the base64 itself
+        contentForHashing = content.slice(0, maxChars);
+      } else {
+        // For text files that were base64 encoded, use the decoded text
+        contentForHashing = decoded.slice(0, maxChars);
+      }
+    } catch {
+      // If decoding fails, use the base64 string itself
+      contentForHashing = content.slice(0, maxChars);
+    }
+  } else {
+    // Plain text content
+    contentForHashing = content.slice(0, maxChars);
+  }
+
+  // Normalize whitespace and line endings for consistency
+  contentForHashing = contentForHashing
+    .replace(/\r\n/g, '\n') // Normalize line endings
+    .replace(/\r/g, '\n')
+    .trim();
+
+  // Create a deterministic string that includes all relevant factors
+  const componentsToHash = [
+    agentId, // Namespace by agent
+    contentForHashing, // The actual content
+    includeFilename || '', // Optional filename for additional uniqueness
+  ]
+    .filter(Boolean)
+    .join('::');
+
+  // Create SHA-256 hash
+  const hash = createHash('sha256').update(componentsToHash).digest('hex');
+
+  // Use a namespace UUID for documents (you can define this as a constant)
+  const DOCUMENT_NAMESPACE = '6ba7b810-9dad-11d1-80b4-00c04fd430c8'; // Standard namespace UUID
+
+  // Generate UUID v5 from the hash (deterministic)
+  const uuid = uuidv5(hash, DOCUMENT_NAMESPACE);
+
+  logger.debug(
+    `[generateContentBasedId] Generated UUID ${uuid} for document with content hash ${hash.slice(0, 8)}...`
+  );
+
+  return uuid;
+}
+
+/**
+ * Extracts the first N lines from text content for ID generation
+ * @param content The full text content
+ * @param maxLines Maximum number of lines to extract
+ * @returns The extracted lines as a single string
+ */
+export function extractFirstLines(content: string, maxLines: number = 10): string {
+  const lines = content.split(/\r?\n/);
+  return lines.slice(0, maxLines).join('\n');
 }

@@ -23,7 +23,7 @@ import {
 import { AddKnowledgeOptions } from './types.ts';
 import type { KnowledgeConfig, LoadResult } from './types';
 import { loadDocsFromPath } from './docs-loader';
-import { isBinaryContentType, looksLikeBase64 } from './utils.ts';
+import { isBinaryContentType, looksLikeBase64, generateContentBasedId } from './utils.ts';
 
 /**
  * Knowledge Service - Provides retrieval augmented generation capabilities
@@ -52,9 +52,8 @@ export class KnowledgeService extends Service {
     };
 
     // Only enable LOAD_DOCS_ON_STARTUP if explicitly set to true
-    const loadDocsOnStartup = 
-      parseBooleanEnv(config?.LOAD_DOCS_ON_STARTUP) || 
-      process.env.LOAD_DOCS_ON_STARTUP === 'true';
+    const loadDocsOnStartup =
+      parseBooleanEnv(config?.LOAD_DOCS_ON_STARTUP) || process.env.LOAD_DOCS_ON_STARTUP === 'true';
 
     this.knowledgeConfig = {
       CTX_KNOWLEDGE_ENABLED: parseBooleanEnv(config?.CTX_KNOWLEDGE_ENABLED),
@@ -176,38 +175,40 @@ export class KnowledgeService extends Service {
   }> {
     // Use agentId from options if provided (from frontend), otherwise fall back to runtime
     const agentId = options.agentId || (this.runtime.agentId as UUID);
+
+    // Generate content-based ID to ensure consistency
+    const contentBasedId = generateContentBasedId(options.content, agentId, {
+      includeFilename: options.originalFilename,
+      contentType: options.contentType,
+      maxChars: 2000, // Use first 2KB of content for ID generation
+    }) as UUID;
+
     logger.info(
-      `KnowledgeService processing document for agent: ${agentId}, file: ${options.originalFilename}, type: ${options.contentType}`
+      `KnowledgeService processing document for agent: ${agentId}, file: ${options.originalFilename}, type: ${options.contentType}, generated ID: ${contentBasedId}`
     );
 
-    // Check if document already exists in database using clientDocumentId as the primary key for "documents" table
+    // Check if document already exists in database using content-based ID
     try {
-      // The `getMemoryById` in runtime usually searches generic memories.
-      // We need a way to specifically query the 'documents' table or ensure clientDocumentId is unique across all memories if used as ID.
-      // For now, assuming clientDocumentId is the ID used when creating document memory.
-      const existingDocument = await this.runtime.getMemoryById(options.clientDocumentId);
+      const existingDocument = await this.runtime.getMemoryById(contentBasedId);
       if (existingDocument && existingDocument.metadata?.type === MemoryType.DOCUMENT) {
         logger.info(
-          `Document ${options.originalFilename} with ID ${options.clientDocumentId} already exists. Skipping processing.`
+          `Document ${options.originalFilename} with ID ${contentBasedId} already exists. Skipping processing.`
         );
 
         // Count existing fragments for this document
         const fragments = await this.runtime.getMemories({
           tableName: 'knowledge',
-          // Assuming fragments store original documentId in metadata.documentId
-          // This query might need adjustment based on actual fragment metadata structure.
-          // A more robust way would be to query where metadata.documentId === options.clientDocumentId
         });
 
         // Filter fragments related to this specific document
         const relatedFragments = fragments.filter(
           (f) =>
             f.metadata?.type === MemoryType.FRAGMENT &&
-            (f.metadata as FragmentMetadata).documentId === options.clientDocumentId
+            (f.metadata as FragmentMetadata).documentId === contentBasedId
         );
 
         return {
-          clientDocumentId: options.clientDocumentId,
+          clientDocumentId: contentBasedId,
           storedDocumentMemoryId: existingDocument.id as UUID,
           fragmentCount: relatedFragments.length,
         };
@@ -215,11 +216,15 @@ export class KnowledgeService extends Service {
     } catch (error) {
       // Document doesn't exist or other error, continue with processing
       logger.debug(
-        `Document ${options.clientDocumentId} not found or error checking existence, proceeding with processing: ${error instanceof Error ? error.message : String(error)}`
+        `Document ${contentBasedId} not found or error checking existence, proceeding with processing: ${error instanceof Error ? error.message : String(error)}`
       );
     }
 
-    return this.processDocument(options);
+    // Process the document with the content-based ID
+    return this.processDocument({
+      ...options,
+      clientDocumentId: contentBasedId,
+    });
   }
 
   /**
@@ -455,9 +460,11 @@ export class KnowledgeService extends Service {
     const processingPromises = items.map(async (item) => {
       await this.knowledgeProcessingSemaphore.acquire();
       try {
-        // For character knowledge, the item itself (string) is the source.
-        // A unique ID is generated from this string content.
-        const knowledgeId = createUniqueUuid(this.runtime.agentId + item, item); // Use agentId in seed for uniqueness
+        // Generate content-based ID for character knowledge
+        const knowledgeId = generateContentBasedId(item, this.runtime.agentId, {
+          maxChars: 2000, // Use first 2KB of content
+          includeFilename: 'character-knowledge', // A constant identifier for character knowledge
+        }) as UUID;
 
         if (await this.checkExistingKnowledge(knowledgeId)) {
           logger.debug(
@@ -496,7 +503,7 @@ export class KnowledgeService extends Service {
         // Using _internalAddKnowledge for character knowledge
         await this._internalAddKnowledge(
           {
-            id: knowledgeId, // Use the content-derived ID
+            id: knowledgeId, // Use the content-based ID
             content: {
               text: item,
             },
