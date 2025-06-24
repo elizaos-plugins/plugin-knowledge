@@ -71,7 +71,7 @@ async function uploadKnowledgeHandler(req: any, res: any, runtime: IAgentRuntime
     // Process multipart requests (file uploads)
     if (hasUploadedFiles) {
       let files: UploadedFile[] = [];
-      
+
       // Handle both single file and multiple files
       if (req.files.files) {
         if (Array.isArray(req.files.files)) {
@@ -91,38 +91,43 @@ async function uploadKnowledgeHandler(req: any, res: any, runtime: IAgentRuntime
       }
 
       // Validate files for corruption/truncation
-      const invalidFiles = files.filter(file => {
+      const invalidFiles = files.filter((file) => {
         // Check for truncated files
         if (file.truncated) {
           logger.warn(`File ${file.name} was truncated during upload`);
           return true;
         }
-        
+
         // Check for empty files
         if (file.size === 0) {
           logger.warn(`File ${file.name} is empty`);
           return true;
         }
-        
+
         // Check if file has a name
         if (!file.name || file.name.trim() === '') {
           logger.warn(`File has no name`);
           return true;
         }
-        
+
         // Check if file has valid data or temp file path
         if (!file.data && !file.tempFilePath) {
           logger.warn(`File ${file.name} has no data or temp file path`);
           return true;
         }
-        
+
         return false;
       });
 
       if (invalidFiles.length > 0) {
         cleanupFiles(files);
-        const invalidFileNames = invalidFiles.map(f => f.name || 'unnamed').join(', ');
-        return sendError(res, 400, 'INVALID_FILES', `Invalid or corrupted files: ${invalidFileNames}`);
+        const invalidFileNames = invalidFiles.map((f) => f.name || 'unnamed').join(', ');
+        return sendError(
+          res,
+          400,
+          'INVALID_FILES',
+          `Invalid or corrupted files: ${invalidFileNames}`
+        );
       }
 
       // Get agentId from request body or query parameter BEFORE processing files
@@ -144,22 +149,16 @@ async function uploadKnowledgeHandler(req: any, res: any, runtime: IAgentRuntime
       logger.info(`[KNOWLEDGE UPLOAD HANDLER] Processing upload for agent: ${agentId}`);
 
       const processingPromises = files.map(async (file, index) => {
-        let knowledgeId: UUID;
         const originalFilename = file.name;
         const filePath = file.tempFilePath;
 
-        knowledgeId =
-          (req.body?.documentIds && req.body.documentIds[index]) ||
-          req.body?.documentId ||
-          (createUniqueUuid(runtime, `knowledge-${originalFilename}-${Date.now()}`) as UUID);
-
         logger.debug(
-          `[KNOWLEDGE UPLOAD HANDLER] File: ${originalFilename}, Agent ID: ${agentId}, World ID: ${worldId}, Knowledge ID: ${knowledgeId}`
+          `[KNOWLEDGE UPLOAD HANDLER] File: ${originalFilename}, Agent ID: ${agentId}, World ID: ${worldId}`
         );
 
         try {
           let fileBuffer: Buffer;
-          
+
           // The global middleware uses tempFiles by default, so prioritize tempFilePath
           if (filePath && fs.existsSync(filePath)) {
             // Read from temporary file (most common case with global middleware)
@@ -169,7 +168,9 @@ async function uploadKnowledgeHandler(req: any, res: any, runtime: IAgentRuntime
                 throw new Error('Temporary file is empty');
               }
               fileBuffer = await fs.promises.readFile(filePath);
-              logger.debug(`[KNOWLEDGE UPLOAD] Read ${fileBuffer.length} bytes from temp file: ${filePath}`);
+              logger.debug(
+                `[KNOWLEDGE UPLOAD] Read ${fileBuffer.length} bytes from temp file: ${filePath}`
+              );
             } catch (fsError: any) {
               throw new Error(`Failed to read temporary file: ${fsError.message}`);
             }
@@ -188,7 +189,9 @@ async function uploadKnowledgeHandler(req: any, res: any, runtime: IAgentRuntime
 
           // Additional buffer validation
           if (fileBuffer.length !== file.size) {
-            logger.warn(`File size mismatch for ${originalFilename}: expected ${file.size}, got ${fileBuffer.length}`);
+            logger.warn(
+              `File size mismatch for ${originalFilename}: expected ${file.size}, got ${fileBuffer.length}`
+            );
           }
 
           // Convert to base64
@@ -198,9 +201,10 @@ async function uploadKnowledgeHandler(req: any, res: any, runtime: IAgentRuntime
           }
 
           // Construct AddKnowledgeOptions directly using available variables
+          // Note: We no longer provide clientDocumentId - the service will generate it
           const addKnowledgeOpts: import('./types.ts').AddKnowledgeOptions = {
             agentId: agentId, // Pass the agent ID from frontend
-            clientDocumentId: knowledgeId, // This is knowledgeItem.id
+            clientDocumentId: '' as UUID, // This will be ignored by the service
             contentType: file.mimetype, // Directly from express-fileupload file object
             originalFilename: originalFilename, // Directly from express-fileupload file object
             content: base64Content, // The base64 string of the file
@@ -209,14 +213,14 @@ async function uploadKnowledgeHandler(req: any, res: any, runtime: IAgentRuntime
             entityId: agentId, // Use the correct agent ID
           };
 
-          await service.addKnowledge(addKnowledgeOpts);
+          const result = await service.addKnowledge(addKnowledgeOpts);
 
           if (filePath) {
             cleanupFile(filePath);
           }
-          
+
           return {
-            id: knowledgeId,
+            id: result.clientDocumentId, // Use the content-based ID returned by the service
             filename: originalFilename,
             type: file.mimetype,
             size: file.size,
@@ -231,7 +235,7 @@ async function uploadKnowledgeHandler(req: any, res: any, runtime: IAgentRuntime
             cleanupFile(filePath);
           }
           return {
-            id: knowledgeId,
+            id: '', // No ID since processing failed
             filename: originalFilename,
             status: 'error_processing',
             error: fileError.message,
@@ -277,8 +281,7 @@ async function uploadKnowledgeHandler(req: any, res: any, runtime: IAgentRuntime
           // Normalize the URL for storage (remove query parameters)
           const normalizedUrl = normalizeS3Url(fileUrl);
 
-          // Create a unique ID based on the normalized URL
-          const knowledgeId = createUniqueUuid(runtime, normalizedUrl) as UUID;
+          // Remove the knowledgeId generation here - let the service handle it based on content
 
           // Extract filename from URL for better display
           const urlObject = new URL(fileUrl);
@@ -320,7 +323,7 @@ async function uploadKnowledgeHandler(req: any, res: any, runtime: IAgentRuntime
           // Construct AddKnowledgeOptions with the fetched content
           const addKnowledgeOpts: import('./types.ts').AddKnowledgeOptions = {
             agentId: agentId, // Pass the agent ID from frontend
-            clientDocumentId: knowledgeId,
+            clientDocumentId: '' as UUID, // This will be ignored by the service
             contentType: contentType,
             originalFilename: originalFilename,
             content: content, // Use the base64 encoded content from the URL
@@ -339,7 +342,7 @@ async function uploadKnowledgeHandler(req: any, res: any, runtime: IAgentRuntime
           const result = await service.addKnowledge(addKnowledgeOpts);
 
           return {
-            id: result.clientDocumentId,
+            id: result.clientDocumentId, // Use the content-based ID returned by the service
             fileUrl: fileUrl,
             filename: originalFilename,
             message: 'Knowledge created successfully',
@@ -699,30 +702,68 @@ async function getKnowledgeChunksHandler(req: any, res: any, runtime: IAgentRunt
   }
 
   try {
-    const limit = req.query.limit ? Number.parseInt(req.query.limit as string, 10) : 100;
-    const before = req.query.before ? Number.parseInt(req.query.before as string, 10) : Date.now();
     const documentId = req.query.documentId as string | undefined;
-    const agentId = req.query.agentId as UUID | undefined;
+    const documentsOnly = req.query.documentsOnly === 'true';
 
-    // Get knowledge chunks/fragments for graph view
-    const chunks = await service.getMemories({
-      tableName: 'knowledge',
-      count: limit,
-      end: before,
+    // Always get documents first
+    const documents = await service.getMemories({
+      tableName: 'documents',
+      count: 1000, // Reasonable limit for documents
+      end: Date.now(),
     });
 
-    // Filter chunks by documentId if provided
-    const filteredChunks = documentId
-      ? chunks.filter(
-          (chunk) =>
-            chunk.metadata &&
-            typeof chunk.metadata === 'object' &&
-            'documentId' in chunk.metadata &&
-            chunk.metadata.documentId === documentId
-        )
-      : chunks;
+    // If documentsOnly mode, return only documents
+    if (documentsOnly) {
+      sendSuccess(res, {
+        chunks: documents,
+        stats: {
+          documents: documents.length,
+          fragments: 0,
+          mode: 'documents-only',
+        },
+      });
+      return;
+    }
 
-    sendSuccess(res, { chunks: filteredChunks });
+    // If specific document requested, get ALL its fragments
+    if (documentId) {
+      const allFragments = await service.getMemories({
+        tableName: 'knowledge',
+        count: 100000, // Very high limit to get all fragments
+      });
+
+      const documentFragments = allFragments.filter((fragment) => {
+        const metadata = fragment.metadata as any;
+        return metadata?.documentId === documentId;
+      });
+
+      // Return the specific document and its fragments
+      const specificDocument = documents.find((d) => d.id === documentId);
+      const results = specificDocument
+        ? [specificDocument, ...documentFragments]
+        : documentFragments;
+
+      sendSuccess(res, {
+        chunks: results,
+        stats: {
+          documents: specificDocument ? 1 : 0,
+          fragments: documentFragments.length,
+          mode: 'single-document',
+          documentId,
+        },
+      });
+      return;
+    }
+
+    // Default: return only documents
+    sendSuccess(res, {
+      chunks: documents,
+      stats: {
+        documents: documents.length,
+        fragments: 0,
+        mode: 'documents-only',
+      },
+    });
   } catch (error: any) {
     logger.error('[KNOWLEDGE CHUNKS GET HANDLER] Error retrieving chunks:', error);
     sendError(res, 500, 'RETRIEVAL_ERROR', 'Failed to retrieve knowledge chunks', error.message);
@@ -847,16 +888,16 @@ async function searchKnowledgeHandler(req: any, res: any, runtime: IAgentRuntime
 
 async function handleKnowledgeUpload(req: any, res: any, runtime: IAgentRuntime) {
   logger.debug('[KNOWLEDGE UPLOAD] Starting upload handler');
-  
+
   logger.debug('[KNOWLEDGE UPLOAD] Request details:', {
     method: req.method,
     url: req.url,
     contentType: req.headers['content-type'],
     contentLength: req.headers['content-length'],
     hasFiles: req.files ? Object.keys(req.files).length : 0,
-    hasBody: req.body ? Object.keys(req.body).length : 0
+    hasBody: req.body ? Object.keys(req.body).length : 0,
   });
-  
+
   try {
     logger.debug('[KNOWLEDGE UPLOAD] Using files parsed by global middleware');
     await uploadKnowledgeHandler(req, res, runtime);

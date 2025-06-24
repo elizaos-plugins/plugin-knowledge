@@ -31,17 +31,17 @@ const ctxKnowledgeEnabled =
  * Check if custom LLM should be used based on environment variables
  * Custom LLM is enabled when all three key variables are set:
  * - TEXT_PROVIDER
- * - TEXT_MODEL  
+ * - TEXT_MODEL
  * - OPENROUTER_API_KEY (or provider-specific API key)
  */
 function shouldUseCustomLLM(): boolean {
   const textProvider = process.env.TEXT_PROVIDER;
   const textModel = process.env.TEXT_MODEL;
-  
+
   if (!textProvider || !textModel) {
     return false;
   }
-  
+
   // Check for provider-specific API keys
   switch (textProvider.toLowerCase()) {
     case 'openrouter':
@@ -63,7 +63,9 @@ const useCustomLLM = shouldUseCustomLLM();
 if (ctxKnowledgeEnabled) {
   logger.info(`Document processor starting with Contextual Knowledge ENABLED`);
   if (useCustomLLM) {
-    logger.info(`Using Custom LLM with provider: ${process.env.TEXT_PROVIDER}, model: ${process.env.TEXT_MODEL}`);
+    logger.info(
+      `Using Custom LLM with provider: ${process.env.TEXT_PROVIDER}, model: ${process.env.TEXT_MODEL}`
+    );
   } else {
     logger.info(`Using ElizaOS Runtime LLM (default behavior)`);
   }
@@ -431,11 +433,11 @@ async function generateEmbeddingsForChunks(
   rateLimiter: () => Promise<void>
 ): Promise<Array<any>> {
   // Filter out failed chunks
-  const validChunks = contextualizedChunks.filter(chunk => chunk.success);
-  const failedChunks = contextualizedChunks.filter(chunk => !chunk.success);
+  const validChunks = contextualizedChunks.filter((chunk) => chunk.success);
+  const failedChunks = contextualizedChunks.filter((chunk) => !chunk.success);
 
   if (validChunks.length === 0) {
-    return failedChunks.map(chunk => ({
+    return failedChunks.map((chunk) => ({
       success: false,
       index: chunk.index,
       error: new Error('Chunk processing failed'),
@@ -544,6 +546,8 @@ async function generateContextsInBatch(
   contentType?: string,
   batchIndices?: number[]
 ): Promise<Array<{ contextualizedText: string; success: boolean; index: number }>> {
+  console.log('####### generateContextsInBatch FULLL DOCUMENT', fullDocumentText);
+  console.log('####### generateContextsInBatch CHUNKS', chunks);
   if (!chunks || chunks.length === 0) {
     return [];
   }
@@ -559,10 +563,9 @@ async function generateContextsInBatch(
     (config.TEXT_MODEL?.toLowerCase().includes('claude') ||
       config.TEXT_MODEL?.toLowerCase().includes('gemini'));
 
-  // For now custom TEXT_PROVIDER is not supported.
-  // logger.info(
-  //   `Using provider: ${config.TEXT_PROVIDER}, model: ${config.TEXT_MODEL}, caching capability: ${isUsingCacheCapableModel}`
-  // );
+  logger.info(
+    `Using provider: ${config.TEXT_PROVIDER}, model: ${config.TEXT_MODEL}, caching capability: ${isUsingCacheCapableModel}`
+  );
 
   // Prepare prompts or system messages in parallel
   const promptConfigs = prepareContextPrompts(
@@ -595,15 +598,11 @@ async function generateContextsInBatch(
             // Use custom LLM with caching support
             if (item.usesCaching) {
               // Use the newer caching approach with separate document
-              return await generateText(
-                item.promptText!,
-                item.systemPrompt,
-                {
-                  cacheDocument: item.fullDocumentTextForContext,
-                  cacheOptions: { type: 'ephemeral' },
-                  autoCacheContextualRetrieval: true,
-                }
-              );
+              return await generateText(item.promptText!, item.systemPrompt, {
+                cacheDocument: item.fullDocumentTextForContext,
+                cacheOptions: { type: 'ephemeral' },
+                autoCacheContextualRetrieval: true,
+              });
             } else {
               // Original approach - document embedded in prompt
               return await generateText(item.prompt!);
@@ -631,7 +630,7 @@ async function generateContextsInBatch(
           `context generation for chunk ${item.originalIndex}`
         );
 
-        const generatedContext = llmResponse.text;
+        const generatedContext = typeof llmResponse === 'string' ? llmResponse : llmResponse.text;
         const contextualizedText = getChunkWithContext(item.chunkText, generatedContext);
 
         logger.debug(
@@ -763,7 +762,7 @@ async function generateEmbeddingWithValidation(
     const embeddingResult = await runtime.useModel(ModelType.TEXT_EMBEDDING, {
       text,
     });
-    
+
     // Handle different embedding result formats consistently
     const embedding = Array.isArray(embeddingResult)
       ? embeddingResult

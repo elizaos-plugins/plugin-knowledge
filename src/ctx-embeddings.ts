@@ -630,13 +630,5 @@ export function getChunkWithContext(
     return chunkContent;
   }
 
-  // Verify that the generated context contains the original chunk
-  if (!generatedContext.includes(chunkContent)) {
-    console.warn(
-      "Generated context does not contain the original chunk. Appending original to ensure data integrity."
-    );
-    return `${generatedContext.trim()}\n\n${chunkContent}`;
-  }
-
   return generatedContext.trim();
 }
