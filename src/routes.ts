@@ -702,30 +702,68 @@ async function getKnowledgeChunksHandler(req: any, res: any, runtime: IAgentRunt
   }
 
   try {
-    const limit = req.query.limit ? Number.parseInt(req.query.limit as string, 10) : 100;
-    const before = req.query.before ? Number.parseInt(req.query.before as string, 10) : Date.now();
     const documentId = req.query.documentId as string | undefined;
-    const agentId = req.query.agentId as UUID | undefined;
+    const documentsOnly = req.query.documentsOnly === 'true';
 
-    // Get knowledge chunks/fragments for graph view
-    const chunks = await service.getMemories({
-      tableName: 'knowledge',
-      count: limit,
-      end: before,
+    // Always get documents first
+    const documents = await service.getMemories({
+      tableName: 'documents',
+      count: 1000, // Reasonable limit for documents
+      end: Date.now(),
     });
 
-    // Filter chunks by documentId if provided
-    const filteredChunks = documentId
-      ? chunks.filter(
-          (chunk) =>
-            chunk.metadata &&
-            typeof chunk.metadata === 'object' &&
-            'documentId' in chunk.metadata &&
-            chunk.metadata.documentId === documentId
-        )
-      : chunks;
+    // If documentsOnly mode, return only documents
+    if (documentsOnly) {
+      sendSuccess(res, {
+        chunks: documents,
+        stats: {
+          documents: documents.length,
+          fragments: 0,
+          mode: 'documents-only',
+        },
+      });
+      return;
+    }
 
-    sendSuccess(res, { chunks: filteredChunks });
+    // If specific document requested, get ALL its fragments
+    if (documentId) {
+      const allFragments = await service.getMemories({
+        tableName: 'knowledge',
+        count: 100000, // Very high limit to get all fragments
+      });
+
+      const documentFragments = allFragments.filter((fragment) => {
+        const metadata = fragment.metadata as any;
+        return metadata?.documentId === documentId;
+      });
+
+      // Return the specific document and its fragments
+      const specificDocument = documents.find((d) => d.id === documentId);
+      const results = specificDocument
+        ? [specificDocument, ...documentFragments]
+        : documentFragments;
+
+      sendSuccess(res, {
+        chunks: results,
+        stats: {
+          documents: specificDocument ? 1 : 0,
+          fragments: documentFragments.length,
+          mode: 'single-document',
+          documentId,
+        },
+      });
+      return;
+    }
+
+    // Default: return only documents
+    sendSuccess(res, {
+      chunks: documents,
+      stats: {
+        documents: documents.length,
+        fragments: 0,
+        mode: 'documents-only',
+      },
+    });
   } catch (error: any) {
     logger.error('[KNOWLEDGE CHUNKS GET HANDLER] Error retrieving chunks:', error);
     sendError(res, 500, 'RETRIEVAL_ERROR', 'Failed to retrieve knowledge chunks', error.message);

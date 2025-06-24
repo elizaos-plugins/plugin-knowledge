@@ -1,6 +1,6 @@
 import React from 'react';
 import type { UUID, Memory } from '@elizaos/core';
-import { Book, Clock, File, FileText, LoaderIcon, Trash2, Upload, List, Network, Search, Info } from 'lucide-react';
+import { Book, Clock, File, FileText, LoaderIcon, Trash2, Upload, List, Network, Search, Info, ArrowLeft } from 'lucide-react';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { ExtendedMemoryMetadata } from '../../types';
@@ -138,12 +138,18 @@ const apiClient = {
         return await response.json();
     },
 
-    getKnowledgeChunks: async (agentId: UUID, options?: { limit?: number; before?: number; documentId?: UUID }) => {
+    getKnowledgeChunks: async (agentId: UUID, options?: {
+        limit?: number;
+        before?: number;
+        documentId?: UUID;
+        documentsOnly?: boolean;
+    }) => {
         const params = new URLSearchParams();
         params.append('agentId', agentId);
         if (options?.limit) params.append('limit', options.limit.toString());
         if (options?.before) params.append('before', options.before.toString());
         if (options?.documentId) params.append('documentId', options.documentId);
+        if (options?.documentsOnly) params.append('documentsOnly', 'true');
 
         const response = await fetch(`/api/knowledges?${params.toString()}`);
         if (!response.ok) {
@@ -217,46 +223,56 @@ const useKnowledgeDocuments = (agentId: UUID, enabled: boolean = true, includeEm
     });
 };
 
-const useKnowledgeChunks = (agentId: UUID, enabled: boolean = true, documentIdFilter?: UUID) => {
-    // Query to get fragments (chunks)
-    const {
-        data: chunks = [],
-        isLoading: chunksLoading,
-        error: chunksError,
-    } = useQuery<Memory[], Error>({
-        queryKey: ['agents', agentId, 'knowledge', 'chunks', { documentIdFilter }],
-        queryFn: async () => {
-            const response = await apiClient.getKnowledgeChunks(agentId, { documentId: documentIdFilter });
-            return response.data.chunks || [];
-        },
-        enabled,
-    });
-
-    // Query to get documents
+const useKnowledgeChunks = (agentId: UUID, enabled: boolean = true, selectedDocumentId?: UUID) => {
+    // Query for documents only (initial load)
     const {
         data: documents = [],
         isLoading: documentsLoading,
         error: documentsError,
     } = useQuery<Memory[], Error>({
-        queryKey: ['agents', agentId, 'knowledge', 'documents-for-graph'],
+        queryKey: ['agents', agentId, 'knowledge', 'documents-graph'],
         queryFn: async () => {
-            const response = await apiClient.getKnowledgeDocuments(agentId, { includeEmbedding: false });
-            return response.data.memories || [];
+            const response = await apiClient.getKnowledgeChunks(agentId, {
+                documentsOnly: true,
+                limit: 1000
+            });
+            return response.data.chunks || [];
         },
-        enabled,
+        enabled: enabled && !selectedDocumentId,
     });
 
-    // Combine documents and fragments
-    const allMemories = [...documents, ...chunks];
-    const isLoading = chunksLoading || documentsLoading;
-    const error = chunksError || documentsError;
+    // Query for specific document with all its fragments
+    const {
+        data: documentWithFragments = [],
+        isLoading: fragmentsLoading,
+        error: fragmentsError,
+    } = useQuery<Memory[], Error>({
+        queryKey: ['agents', agentId, 'knowledge', 'document-fragments', selectedDocumentId],
+        queryFn: async () => {
+            if (!selectedDocumentId) return [];
 
-    console.log(`Documents: ${documents.length}, Fragments: ${chunks.length}, Total: ${allMemories.length}`);
+            const response = await apiClient.getKnowledgeChunks(agentId, {
+                documentId: selectedDocumentId
+            });
+            return response.data.chunks || [];
+        },
+        enabled: enabled && !!selectedDocumentId,
+    });
+
+    // Combine the data appropriately
+    const allMemories = selectedDocumentId ? documentWithFragments : documents;
+    const isLoading = documentsLoading || fragmentsLoading;
+    const error = documentsError || fragmentsError;
+
+    console.log(`Graph data - Mode: ${selectedDocumentId ? 'Document+Fragments' : 'Documents only'}, Total nodes: ${allMemories.length}`);
 
     return {
         data: allMemories,
         isLoading,
         error,
+        documents: selectedDocumentId ? documents : allMemories,
+        fragments: selectedDocumentId ? documentWithFragments.filter(m => (m.metadata as any)?.type === 'fragment') : [],
+        mode: selectedDocumentId ? 'document-fragments' : 'documents-only'
     };
 };
 
@@ -286,7 +302,6 @@ export function KnowledgeTab({ agentId }: { agentId: UUID }) {
     const [loadingMore, setLoadingMore] = useState(false);
     const [viewMode, setViewMode] = useState<'list' | 'graph'>('list');
     const [selectedMemory, setSelectedMemory] = useState<Memory | null>(null);
-    const [documentIdFilter, setDocumentIdFilter] = useState<UUID | undefined>(undefined);
     const [pdfZoom, setPdfZoom] = useState(1.0);
     const [showUrlDialog, setShowUrlDialog] = useState(false);
     const [urlInput, setUrlInput] = useState('');
@@ -301,6 +316,7 @@ export function KnowledgeTab({ agentId }: { agentId: UUID }) {
     const [searchResults, setSearchResults] = useState<any[]>([]);
     const [isSearching, setIsSearching] = useState(false);
     const [searchError, setSearchError] = useState<string | null>(null);
+    const [selectedDocumentForGraph, setSelectedDocumentForGraph] = useState<UUID | undefined>(undefined);
 
     const fileInputRef = useRef<HTMLInputElement>(null);
     const scrollContainerRef = useRef<HTMLDivElement>(null);
@@ -319,7 +335,7 @@ export function KnowledgeTab({ agentId }: { agentId: UUID }) {
         data: graphMemories = [],
         isLoading: graphLoading,
         error: graphError,
-    } = useKnowledgeChunks(agentId, viewMode === 'graph' && !showSearch, documentIdFilter);
+    } = useKnowledgeChunks(agentId, viewMode === 'graph' && !showSearch, selectedDocumentForGraph);
 
     // Use the appropriate data based on the mode
     const isLoading = viewMode === 'list' ? documentsLoading : graphLoading;
@@ -611,7 +627,7 @@ export function KnowledgeTab({ agentId }: { agentId: UUID }) {
 
     const KnowledgeCard = ({ memory, index }: { memory: Memory; index: number }) => {
         const metadata = (memory.metadata as MemoryMetadata) || {};
-        
+
         // Try to get a meaningful name from various metadata fields
         const getDocumentName = () => {
             if (metadata.title) return metadata.title;
@@ -621,13 +637,13 @@ export function KnowledgeTab({ agentId }: { agentId: UUID }) {
             if (memory.id) return `Document ${memory.id.substring(0, 8)}`;
             return `Document ${index + 1}`;
         };
-        
+
         const getFileExtension = () => {
             if (metadata.fileExt) return metadata.fileExt.toLowerCase();
             const filename = metadata.filename || metadata.originalFilename || metadata.path || '';
             return filename.split('.').pop()?.toLowerCase() || 'doc';
         };
-        
+
         const getSubtitle = () => {
             if (metadata.path) return metadata.path;
             if (metadata.filename) return metadata.filename;
@@ -635,7 +651,7 @@ export function KnowledgeTab({ agentId }: { agentId: UUID }) {
             if (metadata.source) return `Source: ${metadata.source}`;
             return 'Knowledge Document';
         };
-        
+
         const displayName = getDocumentName();
         const subtitle = getSubtitle();
         const fileExt = getFileExtension();
@@ -684,10 +700,7 @@ export function KnowledgeTab({ agentId }: { agentId: UUID }) {
         );
     };
 
-    // Add a function to handle the filtering of chunks by document
-    const handleDocumentFilter = (docId?: UUID) => {
-        setDocumentIdFilter(docId === documentIdFilter ? undefined : docId);
-    };
+
 
     // Component to display the details of a fragment or document
     const MemoryDetails = ({ memory }: { memory: Memory }) => {
@@ -802,15 +815,19 @@ export function KnowledgeTab({ agentId }: { agentId: UUID }) {
                             </>
                         )}
                     </Button>
-                    {viewMode === 'graph' && documentIdFilter && !showSearch && (
+                    {viewMode === 'graph' && selectedDocumentForGraph && !showSearch && (
                         <Button
                             variant="outline"
                             size="sm"
-                            onClick={() => setDocumentIdFilter(undefined)}
+                            onClick={() => {
+                                setSelectedDocumentForGraph(undefined);
+                                setSelectedMemory(null);
+                            }}
                             className="flex-shrink-0"
                         >
-                            <span className="hidden sm:inline">Clear Filter</span>
-                            <span className="sm:hidden">Clear</span>
+                            <ArrowLeft className="h-4 w-4 mr-2" />
+                            <span className="hidden sm:inline">Back to All Documents</span>
+                            <span className="sm:hidden">Back</span>
                         </Button>
                     )}
                     <div className="flex gap-2 ml-auto sm:ml-0">
@@ -1069,8 +1086,8 @@ export function KnowledgeTab({ agentId }: { agentId: UUID }) {
                                                 </div>
                                                 <div className="flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground transition-colors">
                                                     <svg xmlns="http://www.w3.org/2000/svg" className="h-3 w-3" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                                                        <path d="M2 3h6a4 4 0 0 1 4 4v14a3 3 0 0 0-3-3H2z"/>
-                                                        <path d="M22 3h-6a4 4 0 0 0-4 4v14a3 3 0 0 1 3-3h7z"/>
+                                                        <path d="M2 3h6a4 4 0 0 1 4 4v14a3 3 0 0 0-3-3H2z" />
+                                                        <path d="M22 3h-6a4 4 0 0 0-4 4v14a3 3 0 0 1 3-3h7z" />
                                                     </svg>
                                                     <span>Read more</span>
                                                 </div>
@@ -1095,28 +1112,34 @@ export function KnowledgeTab({ agentId }: { agentId: UUID }) {
                     <div className="flex flex-col h-full">
                         <div className={`p-4 overflow-hidden ${selectedMemory ? 'h-1/3' : 'flex-1'} transition-all duration-300`}>
                             <MemoryGraph
-                                memories={memories}
+                                memories={graphMemories}
                                 onNodeClick={(memory) => {
                                     setSelectedMemory(memory);
-                                    // If this is a document, filter to show only its chunks
-                                    if (memory.metadata &&
-                                        typeof memory.metadata === 'object' &&
-                                        ('type' in memory.metadata) &&
-                                        ((memory.metadata.type || '').toLowerCase() === 'document') &&
-                                        !('documentId' in memory.metadata)) {
-                                        handleDocumentFilter(memory.id as UUID);
+
+                                    // If clicking on a document, load its fragments
+                                    const metadata = memory.metadata as any;
+                                    if (metadata?.type === 'document') {
+                                        setSelectedDocumentForGraph(memory.id as UUID);
                                     }
                                 }}
                                 selectedMemoryId={selectedMemory?.id}
                             />
-                            {documentIdFilter && (
+                            {selectedDocumentForGraph && (
                                 <div className="absolute top-16 left-4 bg-card/90 backdrop-blur-sm text-card-foreground p-2 rounded-md shadow-sm border border-border">
                                     <span className="text-xs text-muted-foreground flex items-center">
                                         <svg xmlns="http://www.w3.org/2000/svg" className="h-3 w-3 mr-1.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                                             <polygon points="22 3 2 3 10 12.46 10 19 14 21 14 12.46 22 3"></polygon>
                                         </svg>
-                                        Filtering by document ID: <span className="font-mono ml-1">{documentIdFilter.substring(0, 8)}...</span>
+                                        Viewing document and fragments: <span className="font-mono ml-1">{selectedDocumentForGraph.substring(0, 8)}...</span>
                                     </span>
+                                </div>
+                            )}
+                            {viewMode === 'graph' && graphLoading && selectedDocumentForGraph && (
+                                <div className="absolute top-1/2 left-1/2 transform -translate-x-1/2 -translate-y-1/2 bg-card/90 backdrop-blur-sm p-4 rounded-lg shadow-lg border border-border">
+                                    <div className="flex items-center gap-2">
+                                        <LoaderIcon className="h-5 w-5 animate-spin" />
+                                        <span>Loading document fragments...</span>
+                                    </div>
                                 </div>
                             )}
                         </div>
