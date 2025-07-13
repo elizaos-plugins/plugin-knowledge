@@ -25,6 +25,7 @@ import { Button } from './button';
 import { Card } from './card';
 import { Input } from './input';
 import { MemoryGraph } from './memory-graph';
+import { MemoryGraphOptimized } from './memory-graph-optimized';
 
 // Local utility function instead of importing from client
 const cn = (...classes: (string | undefined | null | false)[]) => {
@@ -1046,8 +1047,8 @@ export function KnowledgeTab({ agentId }: { agentId: UUID }) {
     const isFragment = metadata?.type === 'fragment';
 
     return (
-      <div className="border-t border-border bg-card text-card-foreground h-full flex flex-col">
-        <div className="p-4 flex justify-between items-start flex-shrink-0">
+      <div className="h-full flex flex-col border-t border-border bg-card text-card-foreground">
+        <div className="flex-shrink-0 p-4 flex justify-between items-start">
           <div className="space-y-1">
             <h3 className="text-sm font-medium flex items-center gap-2">
               {isFragment ? (
@@ -1098,9 +1099,15 @@ export function KnowledgeTab({ agentId }: { agentId: UUID }) {
           </Button>
         </div>
 
-        <div className="px-4 pb-4 flex-1 flex flex-col">
-          <div className="bg-background rounded border border-border p-3 text-sm overflow-auto flex-1">
-            <pre className="whitespace-pre-wrap font-mono text-xs h-full">
+        <div className="flex-1 overflow-hidden px-4 pb-4 flex flex-col">
+          <div
+            className="flex-1 min-h-0 bg-background rounded border border-border p-3 overflow-y-auto"
+            style={{
+              scrollbarWidth: 'thin',
+              scrollbarColor: 'rgba(155, 155, 155, 0.5) transparent'
+            }}
+          >
+            <pre className="whitespace-pre-wrap font-mono text-xs break-words max-w-full">
               {memory.content?.text || 'No content available'}
             </pre>
           </div>
@@ -1124,9 +1131,8 @@ export function KnowledgeTab({ agentId }: { agentId: UUID }) {
   return (
     <div className="flex flex-col h-full">
       <div
-        className={`flex flex-col sm:flex-row items-start sm:items-center justify-between border-b gap-3 ${
-          isDocumentFocused ? 'p-6 pb-4' : 'p-4'
-        }`}
+        className={`flex flex-col sm:flex-row items-start sm:items-center justify-between border-b gap-3 ${isDocumentFocused ? 'p-6 pb-4' : 'p-4'
+          }`}
       >
         <div className="flex flex-col gap-1">
           <h2 className="text-lg font-semibold">Knowledge</h2>
@@ -1410,8 +1416,7 @@ export function KnowledgeTab({ agentId }: { agentId: UUID }) {
             <div
               className={`p-4 overflow-hidden ${selectedMemory ? 'h-1/3' : 'flex-1'} transition-all duration-300`}
             >
-              <MemoryGraph
-                memories={graphMemories}
+              <MemoryGraphOptimized
                 onNodeClick={(memory) => {
                   setSelectedMemory(memory);
 
@@ -1422,6 +1427,7 @@ export function KnowledgeTab({ agentId }: { agentId: UUID }) {
                   }
                 }}
                 selectedMemoryId={selectedMemory?.id}
+                agentId={agentId}
               />
               {viewMode === 'graph' && graphLoading && selectedDocumentForGraph && (
                 <div className="absolute top-1/2 left-1/2 transform -translate-x-1/2 -translate-y-1/2 bg-card/90 backdrop-blur-sm p-4 rounded-lg shadow-lg border border-border">
@@ -1435,7 +1441,7 @@ export function KnowledgeTab({ agentId }: { agentId: UUID }) {
 
             {/* Display details of selected node */}
             {selectedMemory && (
-              <div className="h-2/3 overflow-hidden flex-1 transition-all duration-300">
+              <div className="h-2/3 overflow-hidden transition-all duration-300">
                 <MemoryDetails memory={selectedMemory} />
               </div>
             )}
@@ -1610,8 +1616,8 @@ export function KnowledgeTab({ agentId }: { agentId: UUID }) {
                 } else {
                   // For all other documents, display as plain text
                   return (
-                    <div className="h-full w-full bg-background rounded-lg border border-border p-6">
-                      <pre className="whitespace-pre-wrap text-sm font-mono leading-relaxed text-foreground">
+                    <div className="h-full w-full bg-background rounded-lg border border-border p-6 overflow-y-auto">
+                      <pre className="whitespace-pre-wrap text-sm font-mono leading-relaxed text-foreground break-words">
                         {viewingContent.content?.text || 'No content available'}
                       </pre>
                     </div>

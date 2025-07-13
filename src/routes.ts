@@ -843,6 +843,272 @@ async function searchKnowledgeHandler(req: any, res: any, runtime: IAgentRuntime
   }
 }
 
+// New Graph-specific handlers for ultra-lightweight rendering
+
+async function getGraphNodesHandler(req: any, res: any, runtime: IAgentRuntime) {
+  const service = runtime.getService<KnowledgeService>(KnowledgeService.serviceType);
+  if (!service) {
+    return sendError(res, 500, 'SERVICE_NOT_FOUND', 'KnowledgeService not found');
+  }
+
+  try {
+    // Parse pagination parameters
+    const parsedPage = req.query.page ? Number.parseInt(req.query.page as string, 10) : 1;
+    const parsedLimit = req.query.limit ? Number.parseInt(req.query.limit as string, 10) : 20;
+    const type = req.query.type as 'document' | 'fragment' | undefined;
+    const agentId = (req.query.agentId as UUID) || runtime.agentId;
+
+    const page = Number.isNaN(parsedPage) || parsedPage < 1 ? 1 : parsedPage;
+    const limit = Number.isNaN(parsedLimit) || parsedLimit < 1 ? 20 : Math.min(parsedLimit, 50);
+    const offset = (page - 1) * limit;
+
+    logger.debug(
+      `[Graph API] 📊 Fetching graph nodes: page=${page}, limit=${limit}, type=${type || 'all'}, agent=${agentId}`
+    );
+
+    // Get documents filtered by agent
+    const documents = await service.getMemories({
+      tableName: 'documents',
+      roomId: agentId, // Filter by agent
+      count: 10000, // Get all to calculate total count
+    });
+
+    // Calculate pagination
+    const totalDocuments = documents.length;
+    const totalPages = Math.ceil(totalDocuments / limit);
+    const hasMore = page < totalPages;
+
+    // Paginate documents
+    const paginatedDocuments = documents.slice(offset, offset + limit);
+
+    // Build lightweight nodes
+    const nodes: Array<{ id: UUID; type: 'document' | 'fragment' }> = [];
+    const links: Array<{ source: UUID; target: UUID }> = [];
+
+    // Add document nodes
+    paginatedDocuments.forEach((doc) => {
+      nodes.push({ id: doc.id!, type: 'document' });
+    });
+
+    // Always include fragments for the paginated documents (unless specifically requesting documents only)
+    if (type !== 'document') {
+      // Get all fragments for the paginated documents
+      const allFragments = await service.getMemories({
+        tableName: 'knowledge',
+        roomId: agentId,
+        count: 100000,
+      });
+
+      logger.debug(`[Graph API] 📊 Total fragments found: ${allFragments.length}`);
+
+      // Debug: Log the first few fragment metadata to understand structure
+      if (allFragments.length > 0) {
+        logger.debug(
+          `[Graph API] 📊 Sample fragment metadata:`,
+          allFragments.slice(0, 3).map((f) => ({
+            id: f.id,
+            metadata: f.metadata,
+          }))
+        );
+      }
+
+      // For each document, find its fragments and add them
+      paginatedDocuments.forEach((doc) => {
+        const docFragments = allFragments.filter((fragment) => {
+          const metadata = fragment.metadata as any;
+          // Check both documentId match and that it's a fragment type (case-insensitive)
+          const isFragment =
+            metadata?.type?.toLowerCase() === 'fragment' ||
+            metadata?.type === MemoryType.FRAGMENT ||
+            // If no type but has documentId, assume it's a fragment
+            (!metadata?.type && metadata?.documentId);
+          return metadata?.documentId === doc.id && isFragment;
+        });
+
+        if (docFragments.length > 0) {
+          logger.debug(`[Graph API] 📊 Document ${doc.id} has ${docFragments.length} fragments`);
+        }
+
+        // Add fragment nodes and links
+        docFragments.forEach((frag) => {
+          nodes.push({ id: frag.id!, type: 'fragment' });
+          links.push({ source: doc.id!, target: frag.id! });
+        });
+      });
+
+      logger.info(
+        `[Graph API] 📊 Final graph: ${nodes.length} nodes (${paginatedDocuments.length} documents), ${links.length} links`
+      );
+    }
+
+    // Return the graph data with nodes and links
+    sendSuccess(res, {
+      nodes,
+      links,
+      pagination: {
+        currentPage: page,
+        totalPages,
+        hasMore,
+        totalDocuments,
+      },
+    });
+  } catch (error: any) {
+    logger.error('[Graph API] ❌ Error fetching graph nodes:', error);
+    sendError(res, 500, 'GRAPH_ERROR', 'Failed to fetch graph nodes', error.message);
+  }
+}
+
+async function getGraphNodeDetailsHandler(req: any, res: any, runtime: IAgentRuntime) {
+  const service = runtime.getService<KnowledgeService>(KnowledgeService.serviceType);
+  if (!service) {
+    return sendError(res, 500, 'SERVICE_NOT_FOUND', 'KnowledgeService not found');
+  }
+
+  const nodeId = req.params.nodeId as UUID;
+  const agentId = (req.query.agentId as UUID) || runtime.agentId;
+
+  if (!nodeId || nodeId.length < 36) {
+    return sendError(res, 400, 'INVALID_ID', 'Invalid node ID format');
+  }
+
+  try {
+    logger.debug(`[Graph API] 📊 Fetching node details for: ${nodeId}, agent: ${agentId}`);
+
+    // Try to find in documents first
+    const documents = await service.getMemories({
+      tableName: 'documents',
+      roomId: agentId, // Filter by agent
+      count: 10000,
+    });
+
+    const document = documents.find((doc) => doc.id === nodeId);
+
+    if (document) {
+      // Return document details without embedding
+      sendSuccess(res, {
+        id: document.id,
+        type: 'document',
+        content: document.content,
+        metadata: document.metadata,
+        createdAt: document.createdAt,
+      });
+      return;
+    }
+
+    // If not found in documents, try fragments
+    const fragments = await service.getMemories({
+      tableName: 'knowledge',
+      roomId: agentId, // Filter by agent
+      count: 100000, // High limit
+    });
+
+    const fragment = fragments.find((frag) => frag.id === nodeId);
+
+    if (fragment) {
+      sendSuccess(res, {
+        id: fragment.id,
+        type: 'fragment',
+        content: fragment.content,
+        metadata: fragment.metadata,
+        createdAt: fragment.createdAt,
+      });
+      return;
+    }
+
+    sendError(res, 404, 'NOT_FOUND', `Node with ID ${nodeId} not found`);
+  } catch (error: any) {
+    logger.error(`[Graph API] ❌ Error fetching node details for ${nodeId}:`, error);
+    sendError(res, 500, 'GRAPH_ERROR', 'Failed to fetch node details', error.message);
+  }
+}
+
+async function expandDocumentGraphHandler(req: any, res: any, runtime: IAgentRuntime) {
+  const service = runtime.getService<KnowledgeService>(KnowledgeService.serviceType);
+  if (!service) {
+    return sendError(res, 500, 'SERVICE_NOT_FOUND', 'KnowledgeService not found');
+  }
+
+  const documentId = req.params.documentId as UUID;
+  const agentId = (req.query.agentId as UUID) || runtime.agentId;
+
+  if (!documentId || documentId.length < 36) {
+    return sendError(res, 400, 'INVALID_ID', 'Invalid document ID format');
+  }
+
+  try {
+    logger.debug(`[Graph API] 📊 Expanding document: ${documentId}, agent: ${agentId}`);
+
+    // Get all fragments for this document
+    const allFragments = await service.getMemories({
+      tableName: 'knowledge',
+      roomId: agentId, // Filter by agent
+      count: 100000, // High limit
+    });
+
+    logger.debug(`[Graph API] 📊 Total fragments in knowledge table: ${allFragments.length}`);
+
+    // Log a sample fragment to see its structure
+    if (allFragments.length > 0) {
+      logger.debug(`[Graph API] 📊 Sample fragment metadata:`, allFragments[0].metadata);
+
+      // Log all unique metadata types found
+      const uniqueTypes = new Set(allFragments.map((f) => (f.metadata as any)?.type));
+      logger.debug(
+        `[Graph API] 📊 Unique metadata types found in knowledge table:`,
+        Array.from(uniqueTypes)
+      );
+
+      // Log metadata of all fragments for this specific document
+      const relevantFragments = allFragments.filter((fragment) => {
+        const metadata = fragment.metadata as any;
+        const hasDocumentId = metadata?.documentId === documentId;
+        if (hasDocumentId) {
+          logger.debug(`[Graph API] 📊 Fragment ${fragment.id} metadata:`, metadata);
+        }
+        return hasDocumentId;
+      });
+
+      logger.debug(
+        `[Graph API] 📊 Fragments with matching documentId: ${relevantFragments.length}`
+      );
+    }
+
+    const documentFragments = allFragments.filter((fragment) => {
+      const metadata = fragment.metadata as any;
+      // Check both documentId match and that it's a fragment type (case-insensitive)
+      const isFragment =
+        metadata?.type?.toLowerCase() === 'fragment' ||
+        metadata?.type === MemoryType.FRAGMENT ||
+        // If no type but has documentId, assume it's a fragment
+        (!metadata?.type && metadata?.documentId);
+      return metadata?.documentId === documentId && isFragment;
+    });
+
+    // Build fragment nodes and links
+    const nodes = documentFragments.map((frag) => ({
+      id: frag.id!,
+      type: 'fragment' as const,
+    }));
+
+    const links = documentFragments.map((frag) => ({
+      source: documentId,
+      target: frag.id!,
+    }));
+
+    logger.info(`[Graph API] 📊 Found ${nodes.length} fragments for document ${documentId}`);
+
+    sendSuccess(res, {
+      documentId,
+      nodes,
+      links,
+      fragmentCount: nodes.length,
+    });
+  } catch (error: any) {
+    logger.error(`[Graph API] ❌ Error expanding document ${documentId}:`, error);
+    sendError(res, 500, 'GRAPH_ERROR', 'Failed to expand document', error.message);
+  }
+}
+
 // Wrapper handler that applies multer middleware before calling the upload handler
 async function uploadKnowledgeWithMulter(req: any, res: any, runtime: IAgentRuntime) {
   const upload = createUploadMiddleware(runtime);
@@ -904,5 +1170,21 @@ export const knowledgeRoutes: Route[] = [
     type: 'GET',
     path: '/search',
     handler: searchKnowledgeHandler,
+  },
+  // New graph routes
+  {
+    type: 'GET',
+    path: '/graph/nodes',
+    handler: getGraphNodesHandler,
+  },
+  {
+    type: 'GET',
+    path: '/graph/node/:nodeId',
+    handler: getGraphNodeDetailsHandler,
+  },
+  {
+    type: 'GET',
+    path: '/graph/expand/:documentId',
+    handler: expandDocumentGraphHandler,
   },
 ];
